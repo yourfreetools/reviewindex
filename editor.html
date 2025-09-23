@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Post Editor - ReviewIndex</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .editor-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: #1f2937;
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            min-height: 80vh;
+        }
+
+        .sidebar {
+            background: #f8fafc;
+            border-right: 1px solid #e2e8f0;
+            padding: 20px;
+        }
+
+        .editor-area {
+            padding: 20px;
+        }
+
+        .post-list {
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .post-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .post-item:hover {
+            border-color: #3b82f6;
+        }
+
+        .post-item.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        textarea {
+            min-height: 200px;
+            resize: vertical;
+            font-family: monospace;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .search-box {
+            margin-bottom: 20px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+        }
+
+        .metadata-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .char-count {
+            font-size: 12px;
+            color: #6b7280;
+            text-align: right;
+        }
+
+        .char-count.warning {
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="editor-container">
+        <div class="header">
+            <h1>📝 Post Editor - ReviewIndex</h1>
+            <div>
+                <button id="saveBtn" class="btn btn-success">💾 Save Changes</button>
+                <button id="backBtn" class="btn btn-primary">← Back to Posts</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- Posts List Sidebar -->
+            <div class="sidebar" id="postsSidebar">
+                <div class="search-box">
+                    <input type="text" id="searchPosts" placeholder="Search posts...">
+                </div>
+                <div class="post-list" id="postList">
+                    <!-- Posts will be loaded here -->
+                </div>
+                <div id="loadingPosts">Loading posts...</div>
+            </div>
+
+            <!-- Editor Area -->
+            <div class="editor-area" id="editorArea">
+                <div id="noPostSelected">
+                    <h3>Select a post to edit</h3>
+                    <p>Choose a post from the sidebar to start editing.</p>
+                </div>
+
+                <div id="postEditor" class="hidden">
+                    <div class="alert" id="editorAlert"></div>
+                    
+                    <div class="metadata-grid">
+                        <div class="form-group">
+                            <label for="editTitle">Title</label>
+                            <input type="text" id="editTitle">
+                            <div class="char-count" id="titleCount">0/60</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editRating">Rating</label>
+                            <select id="editRating">
+                                <option value="5">5 ⭐</option>
+                                <option value="4">4 ⭐</option>
+                                <option value="3">3 ⭐</option>
+                                <option value="2">2 ⭐</option>
+                                <option value="1">1 ⭐</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="editDescription">Description</label>
+                        <textarea id="editDescription"></textarea>
+                        <div class="char-count" id="descCount">0/160</div>
+                    </div>
+
+                    <div class="metadata-grid">
+                        <div class="form-group">
+                            <label for="editImage">Image URL</label>
+                            <input type="url" id="editImage">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editAffiliate">Affiliate Link</label>
+                            <input type="url" id="editAffiliate">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="editCategories">Categories (comma separated)</label>
+                        <input type="text" id="editCategories" value="reviews">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="editContent">Content (Markdown supported)</label>
+                        <textarea id="editContent" rows="15"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="editFilename">Filename (URL slug)</label>
+                        <input type="text" id="editFilename" readonly>
+                    </div>
+                </div>
+
+                <div id="loadingEditor" class="hidden">Loading post content...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API endpoints
+        const API = {
+            list: '/api/list-posts',
+            edit: '/api/edit-post'
+        };
+
+        let currentPost = null;
+        let allPosts = [];
+
+        // DOM elements
+        const postList = document.getElementById('postList');
+        const loadingPosts = document.getElementById('loadingPosts');
+        const noPostSelected = document.getElementById('noPostSelected');
+        const postEditor = document.getElementById('postEditor');
+        const loadingEditor = document.getElementById('loadingEditor');
+        const editorAlert = document.getElementById('editorAlert');
+        const saveBtn = document.getElementById('saveBtn');
+        const backBtn = document.getElementById('backBtn');
+        const searchPosts = document.getElementById('searchPosts');
+
+        // Initialize editor
+        document.addEventListener('DOMContentLoaded', function() {
+            loadPosts();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            saveBtn.addEventListener('click', savePost);
+            backBtn.addEventListener('click', showPostList);
+            searchPosts.addEventListener('input', filterPosts);
+            
+            // Character counters
+            document.getElementById('editTitle').addEventListener('input', updateCharCounters);
+            document.getElementById('editDescription').addEventListener('input', updateCharCounters);
+        }
+
+        async function loadPosts() {
+            try {
+                const response = await fetch(API.list);
+                const result = await response.json();
+
+                if (result.success) {
+                    allPosts = result.posts;
+                    displayPosts(allPosts);
+                    loadingPosts.classList.add('hidden');
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (error) {
+                loadingPosts.innerHTML = `<div class="alert alert-error">Error loading posts: ${error.message}</div>`;
+            }
+        }
+
+        function displayPosts(posts) {
+            postList.innerHTML = posts.map(post => `
+                <div class="post-item" data-filename="${post.filename}">
+                    <strong>${post.filename.replace('.md', '')}</strong>
+                    <div style="font-size: 12px; color: #666;">${(post.size / 1024).toFixed(1)} KB</div>
+                </div>
+            `).join('');
+
+            // Add click listeners
+            document.querySelectorAll('.post-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const filename = this.getAttribute('data-filename');
+                    loadPostForEditing(filename);
+                });
+            });
+        }
+
+        function filterPosts() {
+            const searchTerm = searchPosts.value.toLowerCase();
+            const filtered = allPosts.filter(post => 
+                post.filename.toLowerCase().includes(searchTerm)
+            );
+            displayPosts(filtered);
+        }
+
+        async function loadPostForEditing(filename) {
+            try {
+                currentPost = filename;
+                showEditor();
+                loadingEditor.classList.remove('hidden');
+                postEditor.classList.add('hidden');
+
+                const response = await fetch(API.edit, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'get',
+                        filename: filename
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    populateEditor(result.frontmatter, result.content, result.sha);
+                    loadingEditor.classList.add('hidden');
+                    postEditor.classList.remove('hidden');
+                    showAlert('Post loaded successfully', 'success');
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (error) {
+                showAlert(`Error loading post: ${error.message}`, 'error');
+                loadingEditor.classList.add('hidden');
+            }
+        }
+
+        function populateEditor(frontmatter, content, sha) {
+            document.getElementById('editTitle').value = frontmatter.title || '';
+            document.getElementById('editDescription').value = frontmatter.description || '';
+            document.getElementById('editImage').value = frontmatter.image || '';
+            document.getElementById('editRating').value = frontmatter.rating || '4';
+            document.getElementById('editAffiliate').value = frontmatter.affiliateLink || '';
+            document.getElementById('editCategories').value = frontmatter.categories ? 
+                frontmatter.categories.replace(/[\[\]"]/g, '') : 'reviews';
+            document.getElementById('editContent').value = content || '';
+            document.getElementById('editFilename').value = currentPost;
+            
+            // Store SHA for updates
+            document.getElementById('editFilename').setAttribute('data-sha', sha);
+            
+            updateCharCounters();
+        }
+
+        async function savePost() {
+            if (!currentPost) return;
+
+            const frontmatter = {
+                title: document.getElementById('editTitle').value,
+                description: document.getElementById('editDescription').value,
+                image: document.getElementById('editImage').value,
+                rating: document.getElementById('editRating').value,
+                affiliateLink: document.getElementById('editAffiliate').value,
+                categories: `[${document.getElementById('editCategories').value.split(',').map(c => `"${c.trim()}"`).join(', ')}]`,
+                sha: document.getElementById('editFilename').getAttribute('data-sha')
+            };
+
+            const content = document.getElementById('editContent').value;
+
+            try {
+                saveBtn.classList.add('loading');
+                saveBtn.textContent = 'Saving...';
+
+                const response = await fetch(API.edit, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'update',
+                        filename: currentPost,
+                        frontmatter: frontmatter,
+                        content: content
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showAlert('✅ Post updated successfully!', 'success');
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (error) {
+                showAlert(`❌ Error saving post: ${error.message}`, 'error');
+            } finally {
+                saveBtn.classList.remove('loading');
+                saveBtn.textContent = '💾 Save Changes';
+            }
+        }
+
+        function showEditor() {
+            noPostSelected.classList.add('hidden');
+            postEditor.classList.remove('hidden');
+        }
+
+        function showPostList() {
+            noPostSelected.classList.remove('hidden');
+            postEditor.classList.add('hidden');
+            currentPost = null;
+        }
+
+        function updateCharCounters() {
+            const titleCount = document.getElementById('editTitle').value.length;
+            const descCount = document.getElementById('editDescription').value.length;
+            
+            document.getElementById('titleCount').textContent = `${titleCount}/60`;
+            document.getElementById('descCount').textContent = `${descCount}/160`;
+            
+            document.getElementById('titleCount').classList.toggle('warning', titleCount > 60);
+            document.getElementById('descCount').classList.toggle('warning', descCount > 160);
+        }
+
+        function showAlert(message, type) {
+            editorAlert.textContent = message;
+            editorAlert.className = 'alert';
+            editorAlert.classList.add(type === 'success' ? 'alert-success' : 'alert-error');
+            editorAlert.style.display = 'block';
+            
+            setTimeout(() => {
+                editorAlert.style.display = 'none';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
