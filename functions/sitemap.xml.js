@@ -160,7 +160,8 @@ async function generateCategoriesSitemap(context) {
 
 // Fetch posts from GitHub with enhanced metadata
 async function fetchPostsFromGitHub(context) {
-    const response = await fetch('https://api.github.com/repos/your-username/your-repo/contents/reviews', {
+    // Updated with correct repository and path
+    const response = await fetch('https://api.github.com/repos/yourfreetools/reviewindex/contents/content/reviews', {
         headers: {
             'Authorization': `token ${context.env.GITHUB_TOKEN}`,
             'User-Agent': 'ReviewIndex-Sitemap',
