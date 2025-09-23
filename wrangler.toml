@@ -1,0 +1,11 @@
+# wrangler.toml
+name = "reviewindex"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "./"
+
+[env.production]
+# No need for vars here - set in Cloudflare Dashboard
+
+[[functions]]
+pattern = "/api/*"
+script = "create-post"
