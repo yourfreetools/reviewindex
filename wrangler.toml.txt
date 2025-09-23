@@ -1,0 +1,14 @@
+# wrangler.toml
+name = "reviewindex"
+pages_build_output_dir = ""
+
+[[functions]]
+include = ["functions/**/*.js"]
+
+[functions.assets]
+bucket = ""
+include = ["*.html", "*.css", "*.js"]
+exclude = ["node_modules", "*.ts"]
+
+[env.production]
+# Add any production-specific configuration
