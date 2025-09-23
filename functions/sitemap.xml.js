@@ -61,7 +61,7 @@ async function generatePostsSitemap(context) {
         // Add homepage
         sitemap += `
     <url>
-        <loc>${baseUrl}</loc>
+        <loc>${escapeXml(baseUrl)}</loc>
         <lastmod>${currentDate}</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
@@ -75,7 +75,7 @@ async function generatePostsSitemap(context) {
             
             sitemap += `
     <url>
-        <loc>${postUrl}</loc>
+        <loc>${escapeXml(postUrl)}</loc>
         <lastmod>${lastmod}</lastmod>
         <changefreq>weekly</changefreq>
         <priority>${priority}</priority>`;
@@ -84,8 +84,8 @@ async function generatePostsSitemap(context) {
             if (post.image) {
                 sitemap += `
         <image:image>
-            <image:loc>${post.image}</image:loc>
-            <image:title>${post.title} Review</image:title>
+            <image:loc>${escapeXml(post.image)}</image:loc>
+            <image:title>${escapeXml(post.title)} Review</image:title>
         </image:image>`;
             }
             
@@ -101,7 +101,7 @@ async function generatePostsSitemap(context) {
                 <news:language>en</news:language>
             </news:publication>
             <news:publication_date>${postDate.toISOString().split('T')[0]}</news:publication_date>
-            <news:title>${post.title} Review</news:title>
+            <news:title>${escapeXml(post.title)} Review</news:title>
         </news:news>`;
             }
             
@@ -141,7 +141,7 @@ async function generateCategoriesSitemap(context) {
         const categoryUrl = `${baseUrl}/category/${encodeURIComponent(category.toLowerCase())}`;
         sitemap += `
     <url>
-        <loc>${categoryUrl}</loc>
+        <loc>${escapeXml(categoryUrl)}</loc>
         <lastmod>${currentDate}</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.6</priority>
@@ -197,7 +197,7 @@ async function fetchPostsFromGitHub(context) {
                 // Add basic post info even if metadata extraction fails
                 posts.push({
                     slug: file.name.replace('.md', ''),
-                    title: file.name.replace('.md', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                    title: escapeXml(file.name.replace('.md', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
                     date: new Date().toISOString().split('T')[0],
                     lastmod: new Date().toISOString().split('T')[0],
                     category: 'General'
@@ -210,11 +210,11 @@ async function fetchPostsFromGitHub(context) {
     return posts.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
-// Extract metadata from markdown frontmatter
+// Extract metadata from markdown frontmatter and escape XML
 function extractPostMetadata(content, filename) {
     const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
     const metadata = {
-        title: filename.replace('.md', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        title: escapeXml(filename.replace('.md', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
         date: new Date().toISOString().split('T')[0],
         category: 'General'
     };
@@ -231,23 +231,23 @@ function extractPostMetadata(content, filename) {
                 
                 switch (key) {
                     case 'title':
-                        metadata.title = value;
+                        metadata.title = escapeXml(value);
                         break;
                     case 'date':
                         metadata.date = value;
                         metadata.lastmod = value;
                         break;
                     case 'category':
-                        metadata.category = value;
+                        metadata.category = escapeXml(value);
                         break;
                     case 'image':
-                        metadata.image = value;
+                        metadata.image = escapeXml(value);
                         break;
                     case 'featured':
                         metadata.featured = value.toLowerCase() === 'true';
                         break;
                     case 'excerpt':
-                        metadata.excerpt = value;
+                        metadata.excerpt = escapeXml(value);
                         break;
                 }
             }
@@ -257,6 +257,17 @@ function extractPostMetadata(content, filename) {
     return metadata;
 }
 
+// XML escaping function
+function escapeXml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe.toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
+
 function generateFallbackSitemap() {
     const baseUrl = 'https://reviewindex.pages.dev';
     const currentDate = new Date().toISOString().split('T')[0];
@@ -264,7 +275,7 @@ function generateFallbackSitemap() {
     const fallbackSitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-        <loc>${baseUrl}</loc>
+        <loc>${escapeXml(baseUrl)}</loc>
         <lastmod>${currentDate}</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
