@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "description": "ReviewIndex Routes",
+  "include": [
+    "/*"
+  ],
+  "exclude": [
+    "/assets/*",
+    "/images/*",
+    "/css/*",
+    "/js/*"
+  ],
+  "rules": [
+    {
+      "path": "/sitemap.xml",
+      "type": "dynamic"
+    },
+    {
+      "path": "/robots.txt",
+      "type": "dynamic"
+    },
+    {
+      "path": "/api/*",
+      "type": "dynamic"
+    },
+    {
+      "path": "/*",
+      "type": "static"
+    }
+  ]
+}
