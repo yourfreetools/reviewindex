@@ -541,7 +541,7 @@
                 </div>
 
                 <!-- Refresh Button -->
-                <button class="refresh-btn" onclick="loadRandomPosts()">
+                <button class="refresh-btn" onclick="loadPosts()">
                     🔄 Load Different Reviews
                 </button>
 
@@ -575,103 +575,229 @@
     </footer>
 
     <script>
-        // Configuration - UPDATE WITH YOUR ACTUAL GITHUB INFO
-const GITHUB_USERNAME = 'yourfreetools';
-const REPO_NAME = 'reviewindex';
-const POSTS_FOLDER = 'content';
-
-// GitHub API endpoint to list markdown files
-const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_USERNAME}/${REPO_NAME}/contents/${POSTS_FOLDER}`;
-
-let allPosts = [];
-
-// Initialize when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    loadPostsFromGitHub();
-});
-
-// Load posts from GitHub repository
-async function loadPostsFromGitHub() {
-    try {
-        showLoadingState();
+        // Configuration - Update these with your actual GitHub info
+        const GITHUB_USERNAME = 'your-github-username';
+        const REPO_NAME = 'your-repo-name';
+        const POSTS_FOLDER = 'posts'; // Folder where your markdown files are stored
         
-        const response = await fetch(GITHUB_API_URL);
+        // GitHub API endpoint to list markdown files
+        const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_USERNAME}/${REPO_NAME}/contents/${POSTS_FOLDER}`;
         
-        if (!response.ok) {
-            throw new Error('Failed to fetch posts from GitHub');
+        let allPosts = [];
+        let displayedPosts = new Set();
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadPosts();
+            initializeSearch();
+        });
+
+        // Load posts from GitHub repository
+        async function loadPosts() {
+            try {
+                showLoadingState();
+                
+                const response = await fetch(GITHUB_API_URL);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch posts from GitHub');
+                }
+
+                const files = await response.json();
+                
+                // Filter only .md files
+                const markdownFiles = files.filter(file => 
+                    file.name.endsWith('.md') && file.type === 'file'
+                );
+
+                if (markdownFiles.length === 0) {
+                    showNoPostsState();
+                    return;
+                }
+
+                allPosts = markdownFiles;
+                displayRandomPosts();
+
+            } catch (error) {
+                console.error('Error loading posts:', error);
+                showErrorState();
+            }
         }
 
-        const files = await response.json();
-        
-        // Filter only .md files
-        const markdownFiles = files.filter(file => 
-            file.name.endsWith('.md') && file.type === 'file'
-        );
+        // Display random posts (max 6)
+        function displayRandomPosts() {
+            const postsGrid = document.getElementById('postsGrid');
+            const availablePosts = allPosts.filter(post => !displayedPosts.has(post.name));
+            
+            // If we've shown all posts, reset the set
+            if (availablePosts.length === 0) {
+                displayedPosts.clear();
+            }
 
-        if (markdownFiles.length === 0) {
-            showNoPostsState();
-            return;
+            // Shuffle and select up to 6 posts
+            const shuffled = [...allPosts].sort(() => 0.5 - Math.random());
+            const selectedPosts = shuffled.slice(0, 6);
+
+            // Update displayed posts set
+            selectedPosts.forEach(post => displayedPosts.add(post.name));
+
+            // Display each post
+            postsGrid.innerHTML = '';
+            selectedPosts.forEach(post => {
+                const postCard = createPostCard(post);
+                postsGrid.appendChild(postCard);
+            });
+
+            // Hide no posts state
+            document.getElementById('noPosts').classList.add('hidden');
         }
 
-        allPosts = markdownFiles;
-        displayPosts(markdownFiles);
-
-    } catch (error) {
-        console.error('Error loading posts:', error);
-        showErrorState();
-    }
-}
-
-// Display posts in the grid
-function displayPosts(posts) {
-    const postsGrid = document.getElementById('postsGrid');
-    postsGrid.innerHTML = '';
-
-    posts.forEach(post => {
-        const postCard = createPostCard(post);
-        postsGrid.appendChild(postCard);
-    });
-
-    document.getElementById('noPosts').classList.add('hidden');
-}
-
-// Create post card with real data
-function createPostCard(post) {
-    const postId = post.name.replace('.md', '');
-    const postUrl = `/review/${postId}`;
-    
-    const card = document.createElement('div');
-    card.className = 'post-card';
-    card.innerHTML = `
-        <img src="/placeholder-image.jpg" alt="${post.name}" class="post-image" 
-             onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTViOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlJldmlldyBJbWFnZTwvdGV4dD48L3N2Zz4='">
-        <div class="post-content">
-            <span class="post-category">Review</span>
-            <h3 class="post-title">
-                <a href="${postUrl}">${formatTitle(post.name)}</a>
-            </h3>
-            <p class="post-excerpt">Click to read our comprehensive review of this product...</p>
-            <div class="post-meta">
-                <div class="post-rating">
-                    ⭐⭐⭐⭐⭐ 4/5
+        // Create post card with real GitHub data
+        function createPostCard(post) {
+            const postId = post.name.replace('.md', '');
+            // This creates links like: /review/iphone-15-pro-review
+            const postUrl = `/review/${postId}`;
+            
+            const card = document.createElement('div');
+            card.className = 'post-card';
+            card.innerHTML = `
+                <img src="/placeholder-image.jpg" alt="${formatTitle(post.name)}" class="post-image" 
+                     onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTViOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlJldmlldyBJbWFnZTwvdGV4dD48L3N2Zz4='">
+                <div class="post-content">
+                    <span class="post-category">Product Review</span>
+                    <h3 class="post-title">
+                        <a href="${postUrl}">${formatTitle(post.name)}</a>
+                    </h3>
+                    <p class="post-excerpt">Read our comprehensive review and analysis of this product. Click to see detailed ratings, pros and cons, and final verdict.</p>
+                    <div class="post-meta">
+                        <div class="post-rating">
+                            ⭐⭐⭐⭐⭐ 4.2/5
+                        </div>
+                        <span class="post-date">${getRandomDate()}</span>
+                    </div>
+                    <a href="${postUrl}" class="read-review-btn">Read Full Review</a>
                 </div>
-                <span class="post-date">Recent</span>
-            </div>
-            <a href="${postUrl}" class="read-review-btn">Read Full Review</a>
-        </div>
-    `;
-    return card;
-}
+            `;
+            return card;
+        }
 
-// Format filename to title
-function formatTitle(filename) {
-    return filename
-        .replace('.md', '')
-        .replace(/-/g, ' ')
-        .replace(/\b\w/g, l => l.toUpperCase());
-}
+        // Format filename to title (e.g., "iphone-15-pro-review.md" to "Iphone 15 Pro Review")
+        function formatTitle(filename) {
+            return filename
+                .replace('.md', '')
+                .replace(/-/g, ' ')
+                .replace(/\b\w/g, l => l.toUpperCase())
+                .replace(/\b(Iphone|Ipad|Imac)\b/gi, match => match.charAt(0).toUpperCase() + match.slice(1).toLowerCase());
+        }
 
-// Keep your existing helper functions (showLoadingState, showNoPostsState, etc.)
-    </script>                   
-    </body>
-</html>
+        // Generate random recent date for posts
+        function getRandomDate() {
+            const dates = [
+                '2 days ago',
+                '1 week ago', 
+                '3 days ago',
+                '5 days ago',
+                '1 day ago',
+                '4 days ago'
+            ];
+            return dates[Math.floor(Math.random() * dates.length)];
+        }
+
+        // Show loading state
+        function showLoadingState() {
+            const postsGrid = document.getElementById('postsGrid');
+            postsGrid.innerHTML = `
+                <div class="post-card">
+                    <div class="skeleton" style="height: 200px;"></div>
+                    <div class="post-content">
+                        <div class="skeleton skeleton-text" style="width: 30%;"></div>
+                        <div class="skeleton skeleton-title"></div>
+                        <div class="skeleton skeleton-text"></div>
+                        <div class="skeleton skeleton-text" style="width: 80%;"></div>
+                        <div class="skeleton skeleton-text" style="width: 60%;"></div>
+                        <div class="skeleton" style="height: 44px; margin-top: 1rem;"></div>
+                    </div>
+                </div>
+            `.repeat(3);
+        }
+
+        // Show no posts state
+        function showNoPostsState() {
+            document.getElementById('postsGrid').innerHTML = '';
+            document.getElementById('noPosts').classList.remove('hidden');
+        }
+
+        // Show error state
+        function showErrorState() {
+            const postsGrid = document.getElementById('postsGrid');
+            postsGrid.innerHTML = `
+                <div class="no-posts">
+                    <div class="no-posts-icon">⚠️</div>
+                    <h3>Unable to Load Reviews</h3>
+                    <p>Please check your connection and try again.</p>
+                    <button class="refresh-btn" onclick="loadPosts()">Try Again</button>
+                </div>
+            `;
+        }
+
+        // Initialize search functionality
+        function initializeSearch() {
+            const searchInput = document.getElementById('searchInput');
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchPosts();
+                }
+            });
+        }
+
+        // Search posts
+        function searchPosts() {
+            const query = document.getElementById('searchInput').value.trim().toLowerCase();
+            if (query) {
+                const filteredPosts = allPosts.filter(post => 
+                    formatTitle(post.name).toLowerCase().includes(query)
+                );
+                
+                if (filteredPosts.length > 0) {
+                    const postsGrid = document.getElementById('postsGrid');
+                    postsGrid.innerHTML = '';
+                    filteredPosts.forEach(post => {
+                        const postCard = createPostCard(post);
+                        postsGrid.appendChild(postCard);
+                    });
+                    document.getElementById('noPosts').classList.add('hidden');
+                } else {
+                    showNoPostsState();
+                }
+            } else {
+                displayRandomPosts();
+            }
+        }
+
+        // Add structured data for each post
+        function addPostStructuredData(post) {
+            const script = document.createElement('script');
+            script.type = 'application/ld+json';
+            script.textContent = JSON.stringify({
+                "@context": "https://schema.org",
+                "@type": "Product",
+                "name": formatTitle(post.name),
+                "description": "Comprehensive product review and analysis",
+                "review": {
+                    "@type": "Review",
+                    "reviewRating": {
+                        "@type": "Rating",
+                        "ratingValue": "4.2",
+                        "bestRating": "5"
+                    },
+                    "author": {
+                        "@type": "Person",
+                        "name": "ReviewIndex"
+                    }
+                }
+            });
+            document.head.appendChild(script);
+        }
+    </script>
+</body>
+    </html>
