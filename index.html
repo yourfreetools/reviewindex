@@ -575,213 +575,103 @@
     </footer>
 
     <script>
-        // Configuration
-        const API_ENDPOINT = '/api/list-posts';
-        let allPosts = [];
-        let displayedPosts = new Set();
+        // Configuration - UPDATE WITH YOUR ACTUAL GITHUB INFO
+const GITHUB_USERNAME = 'yourfreetools';
+const REPO_NAME = 'reviewindex';
+const POSTS_FOLDER = 'content';
 
-        // Initialize when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            loadRandomPosts();
-            initializeSearch();
-        });
+// GitHub API endpoint to list markdown files
+const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_USERNAME}/${REPO_NAME}/contents/${POSTS_FOLDER}`;
 
-        // Load posts from GitHub
-        async function loadRandomPosts() {
-            try {
-                showLoadingState();
-                
-                const response = await fetch(API_ENDPOINT);
-                const result = await response.json();
+let allPosts = [];
 
-                if (result.success && result.posts.length > 0) {
-                    allPosts = result.posts;
-                    displayRandomPosts();
-                } else {
-                    showNoPostsState();
-                }
-            } catch (error) {
-                console.error('Error loading posts:', error);
-                showErrorState();
-            }
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadPostsFromGitHub();
+});
+
+// Load posts from GitHub repository
+async function loadPostsFromGitHub() {
+    try {
+        showLoadingState();
+        
+        const response = await fetch(GITHUB_API_URL);
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch posts from GitHub');
         }
 
-        // Display random posts (max 6)
-        function displayRandomPosts() {
-            const postsGrid = document.getElementById('postsGrid');
-            const availablePosts = allPosts.filter(post => !displayedPosts.has(post.filename));
-            
-            // If we've shown all posts, reset the set
-            if (availablePosts.length === 0) {
-                displayedPosts.clear();
-            }
+        const files = await response.json();
+        
+        // Filter only .md files
+        const markdownFiles = files.filter(file => 
+            file.name.endsWith('.md') && file.type === 'file'
+        );
 
-            // Shuffle and select up to 6 posts
-            const shuffled = [...allPosts].sort(() => 0.5 - Math.random());
-            const selectedPosts = shuffled.slice(0, 6);
-
-            // Update displayed posts set
-            selectedPosts.forEach(post => displayedPosts.add(post.filename));
-
-            // Fetch and display each post's content
-            postsGrid.innerHTML = '';
-            selectedPosts.forEach(post => {
-                fetchPostContent(post);
-            });
-
-            // Hide no posts state
-            document.getElementById('noPosts').classList.add('hidden');
+        if (markdownFiles.length === 0) {
+            showNoPostsState();
+            return;
         }
 
-        // Fetch individual post content
-        async function fetchPostContent(post) {
-            try {
-                // Since we can't fetch individual post content directly from GitHub API without authentication,
-                // we'll create a placeholder and link to the actual post URL
-                const postUrl = `/review/${post.filename.replace('.md', '')}`;
-                
-                const postCard = createPostCard({
-                    title: formatTitle(post.filename),
-                    excerpt: 'Comprehensive review and analysis...',
-                    image: '/placeholder-image.jpg',
-                    category: 'Review',
-                    rating: '4',
-                    date: 'Recent',
-                    url: postUrl,
-                    filename: post.filename
-                });
+        allPosts = markdownFiles;
+        displayPosts(markdownFiles);
 
-                document.getElementById('postsGrid').appendChild(postCard);
+    } catch (error) {
+        console.error('Error loading posts:', error);
+        showErrorState();
+    }
+}
 
-                // Try to fetch actual post data if possible
-                try {
-                    const postResponse = await fetch(postUrl);
-                    if (postResponse.ok) {
-                        // If we can access the post, we could parse it here
-                        // This would require additional API endpoints
-                    }
-                } catch (e) {
-                    // Continue with placeholder data
-                }
+// Display posts in the grid
+function displayPosts(posts) {
+    const postsGrid = document.getElementById('postsGrid');
+    postsGrid.innerHTML = '';
 
-            } catch (error) {
-                console.error('Error fetching post content:', error);
-            }
-        }
+    posts.forEach(post => {
+        const postCard = createPostCard(post);
+        postsGrid.appendChild(postCard);
+    });
 
-        // Create post card HTML
-        function createPostCard(post) {
-            const card = document.createElement('div');
-            card.className = 'post-card';
-            card.innerHTML = `
-                <img src="${post.image}" alt="${post.title}" class="post-image" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTViOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlJldmlldyBJbWFnZTwvdGV4dD48L3N2Zz4='">
-                <div class="post-content">
-                    <span class="post-category">${post.category}</span>
-                    <h3 class="post-title">
-                        <a href="${post.url}">${post.title}</a>
-                    </h3>
-                    <p class="post-excerpt">${post.excerpt}</p>
-                    <div class="post-meta">
-                        <div class="post-rating">
-                            ${'⭐'.repeat(parseInt(post.rating))} ${post.rating}/5
-                        </div>
-                        <span class="post-date">${post.date}</span>
-                    </div>
-                    <a href="${post.url}" class="read-review-btn">Read Full Review</a>
+    document.getElementById('noPosts').classList.add('hidden');
+}
+
+// Create post card with real data
+function createPostCard(post) {
+    const postId = post.name.replace('.md', '');
+    const postUrl = `/review/${postId}`;
+    
+    const card = document.createElement('div');
+    card.className = 'post-card';
+    card.innerHTML = `
+        <img src="/placeholder-image.jpg" alt="${post.name}" class="post-image" 
+             onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTViOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlJldmlldyBJbWFnZTwvdGV4dD48L3N2Zz4='">
+        <div class="post-content">
+            <span class="post-category">Review</span>
+            <h3 class="post-title">
+                <a href="${postUrl}">${formatTitle(post.name)}</a>
+            </h3>
+            <p class="post-excerpt">Click to read our comprehensive review of this product...</p>
+            <div class="post-meta">
+                <div class="post-rating">
+                    ⭐⭐⭐⭐⭐ 4/5
                 </div>
-            `;
-            return card;
-        }
+                <span class="post-date">Recent</span>
+            </div>
+            <a href="${postUrl}" class="read-review-btn">Read Full Review</a>
+        </div>
+    `;
+    return card;
+}
 
-        // Format filename to title
-        function formatTitle(filename) {
-            return filename
-                .replace('.md', '')
-                .replace(/-/g, ' ')
-                .replace(/\b\w/g, l => l.toUpperCase());
-        }
+// Format filename to title
+function formatTitle(filename) {
+    return filename
+        .replace('.md', '')
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, l => l.toUpperCase());
+}
 
-        // Show loading state
-        function showLoadingState() {
-            const postsGrid = document.getElementById('postsGrid');
-            postsGrid.innerHTML = `
-                <div class="post-card">
-                    <div class="skeleton" style="height: 200px;"></div>
-                    <div class="post-content">
-                        <div class="skeleton skeleton-text" style="width: 30%;"></div>
-                        <div class="skeleton skeleton-title"></div>
-                        <div class="skeleton skeleton-text"></div>
-                        <div class="skeleton skeleton-text" style="width: 80%;"></div>
-                        <div class="skeleton skeleton-text" style="width: 60%;"></div>
-                        <div class="skeleton" style="height: 44px; margin-top: 1rem;"></div>
-                    </div>
-                </div>
-            `.repeat(3);
-        }
-
-        // Show no posts state
-        function showNoPostsState() {
-            document.getElementById('postsGrid').innerHTML = '';
-            document.getElementById('noPosts').classList.remove('hidden');
-        }
-
-        // Show error state
-        function showErrorState() {
-            const postsGrid = document.getElementById('postsGrid');
-            postsGrid.innerHTML = `
-                <div class="no-posts">
-                    <div class="no-posts-icon">⚠️</div>
-                    <h3>Unable to Load Reviews</h3>
-                    <p>Please check your connection and try again.</p>
-                    <button class="refresh-btn" onclick="loadRandomPosts()">Try Again</button>
-                </div>
-            `;
-        }
-
-        // Initialize search functionality
-        function initializeSearch() {
-            const searchInput = document.getElementById('searchInput');
-            searchInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    searchPosts();
-                }
-            });
-        }
-
-        // Search posts (placeholder - would need search functionality)
-        function searchPosts() {
-            const query = document.getElementById('searchInput').value.trim();
-            if (query) {
-                // Redirect to search page or filter posts
-                alert('Search functionality coming soon! Currently showing random reviews.');
-                loadRandomPosts();
-            }
-        }
-
-        // Add structured data for each post (would be dynamic in real implementation)
-        function addPostStructuredData(post) {
-            const script = document.createElement('script');
-            script.type = 'application/ld+json';
-            script.textContent = JSON.stringify({
-                "@context": "https://schema.org",
-                "@type": "Product",
-                "name": post.title,
-                "description": post.excerpt,
-                "review": {
-                    "@type": "Review",
-                    "reviewRating": {
-                        "@type": "Rating",
-                        "ratingValue": post.rating,
-                        "bestRating": "5"
-                    },
-                    "author": {
-                        "@type": "Person",
-                        "name": "ReviewIndex"
-                    }
-                }
-            });
-            document.head.appendChild(script);
-        }
-    </script>
-</body>
+// Keep your existing helper functions (showLoadingState, showNoPostsState, etc.)
+    </script>                   
+    </body>
 </html>
