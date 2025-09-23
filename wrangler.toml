@@ -1,3 +1,3 @@
 name = "reviewindex"
 compatibility_date = "2024-01-01"
-pages_build_output_dir = "./dist"
+# Remove pages_build_output_dir or set to "." if your HTML is in root
