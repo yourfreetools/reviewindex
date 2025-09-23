@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReviewIndex - Honest Product Reviews & Ratings</title>
+    <meta name="description" content="Unbiased product reviews, expert ratings, and buying guides. Find the best products with our comprehensive testing and analysis.">
+    <meta name="keywords" content="product reviews, buying guides, product ratings, best products, honest reviews">
+    <meta name="author" content="ReviewIndex">
+    
+    <!-- Open Graph / Social Media -->
+    <meta property="og:title" content="ReviewIndex - Honest Product Reviews & Ratings">
+    <meta property="og:description" content="Unbiased product reviews, expert ratings, and buying guides.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://reviewindex.pages.dev">
+    <meta property="og:image" content="https://reviewindex.pages.dev/og-image.jpg">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ReviewIndex - Honest Product Reviews">
+    <meta name="twitter:description" content="Unbiased product reviews and buying guides">
+    
+    <!-- Schema.org Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "ReviewIndex",
+        "url": "https://reviewindex.pages.dev",
+        "description": "Unbiased product reviews, expert ratings, and buying guides",
+        "publisher": {
+            "@type": "Organization",
+            "name": "ReviewIndex",
+            "logo": {
+                "@type": "ImageObject",
+                "url": "https://reviewindex.pages.dev/logo.png"
+            }
+        },
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://reviewindex.pages.dev/search?q={search_term_string}",
+            "query-input": "required name=search_term_string"
+        }
+    }
+    </script>
+    
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --primary-light: #dbeafe;
+            --secondary: #f59e0b;
+            --success: #10b981;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-600: #4b5563;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+            --white: #ffffff;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --radius: 8px;
+            --transition: all 0.3s ease;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: var(--gray-800);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Header Styles */
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--gray-200);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 0;
+        }
+
+        .logo {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--primary);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .logo-icon {
+            font-size: 2rem;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: var(--gray-600);
+            font-weight: 500;
+            transition: var(--transition);
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius);
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        /* Hero Section */
+        .hero {
+            text-align: center;
+            padding: 4rem 0;
+            color: white;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .hero p {
+            font-size: 1.3rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .search-box {
+            max-width: 500px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 1rem 1.5rem;
+            border: none;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .search-box button {
+            position: absolute;
+            right: 5px;
+            top: 5px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .search-box button:hover {
+            background: var(--primary-dark);
+        }
+
+        /* Main Content */
+        .main-content {
+            background: var(--white);
+            border-radius: 20px 20px 0 0;
+            margin-top: -2rem;
+            position: relative;
+            box-shadow: 0 -10px 30px rgba(0,0,0,0.1);
+        }
+
+        .content-wrapper {
+            padding: 3rem 0;
+        }
+
+        .section-title {
+            font-size: 2.2rem;
+            text-align: center;
+            margin-bottom: 3rem;
+            color: var(--gray-900);
+        }
+
+        /* Posts Grid */
+        .posts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .post-card {
+            background: var(--white);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+            overflow: hidden;
+            border: 1px solid var(--gray-200);
+        }
+
+        .post-card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .post-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: linear-gradient(45deg, var(--gray-100), var(--gray-200));
+        }
+
+        .post-content {
+            padding: 1.5rem;
+        }
+
+        .post-category {
+            display: inline-block;
+            background: var(--primary-light);
+            color: var(--primary);
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .post-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            line-height: 1.4;
+        }
+
+        .post-title a {
+            color: var(--gray-900);
+            text-decoration: none;
+            transition: var(--transition);
+        }
+
+        .post-title a:hover {
+            color: var(--primary);
+        }
+
+        .post-excerpt {
+            color: var(--gray-600);
+            margin-bottom: 1rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .post-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--gray-200);
+        }
+
+        .post-rating {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            color: var(--secondary);
+            font-weight: 600;
+        }
+
+        .post-date {
+            color: var(--gray-600);
+            font-size: 0.9rem;
+        }
+
+        /* Loading States */
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--gray-600);
+        }
+
+        .skeleton {
+            background: linear-gradient(90deg, var(--gray-200) 25%, var(--gray-100) 50%, var(--gray-200) 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+            border-radius: var(--radius);
+        }
+
+        .skeleton-text {
+            height: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .skeleton-title {
+            height: 1.5rem;
+            width: 80%;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* Footer */
+        footer {
+            background: var(--gray-900);
+            color: var(--gray-200);
+            padding: 3rem 0;
+            text-align: center;
+        }
+
+        .footer-content {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .footer-links a {
+            color: var(--gray-400);
+            text-decoration: none;
+            transition: var(--transition);
+        }
+
+        .footer-links a:hover {
+            color: var(--white);
+        }
+
+        .copyright {
+            margin-top: 2rem;
+            color: var(--gray-500);
+            font-size: 0.9rem;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .navbar {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .nav-links {
+                gap: 1rem;
+            }
+
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .hero p {
+                font-size: 1.1rem;
+            }
+
+            .posts-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .section-title {
+                font-size: 1.8rem;
+            }
+        }
+
+        /* No Posts State */
+        .no-posts {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--gray-600);
+        }
+
+        .no-posts-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        /* Refresh Button */
+        .refresh-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: var(--radius);
+            font-size: 1rem;
+            cursor: pointer;
+            transition: var(--transition);
+            display: block;
+            margin: 2rem auto;
+        }
+
+        .refresh-btn:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <nav class="navbar">
+                <a href="/" class="logo">
+                    <span class="logo-icon">⭐</span>
+                    ReviewIndex
+                </a>
+                <ul class="nav-links">
+                    <li><a href="#reviews">Reviews</a></li>
+                    <li><a href="#categories">Categories</a></li>
+                    <li><a href="/admin.html">Admin</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <h1>Honest Product Reviews You Can Trust</h1>
+            <p>Unbiased testing, expert analysis, and real-world results to help you make better buying decisions</p>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search for product reviews...">
+                <button onclick="searchPosts()">🔍 Search</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            <div class="content-wrapper">
+                <h2 class="section-title" id="reviews">Latest Product Reviews</h2>
+                
+                <!-- Posts Grid -->
+                <div class="posts-grid" id="postsGrid">
+                    <!-- Skeleton Loading -->
+                    <div class="post-card">
+                        <div class="skeleton" style="height: 200px;"></div>
+                        <div class="post-content">
+                            <div class="skeleton skeleton-text" style="width: 30%;"></div>
+                            <div class="skeleton skeleton-title"></div>
+                            <div class="skeleton skeleton-text"></div>
+                            <div class="skeleton skeleton-text" style="width: 80%;"></div>
+                            <div class="skeleton skeleton-text" style="width: 60%;"></div>
+                        </div>
+                    </div>
+                    <div class="post-card">
+                        <div class="skeleton" style="height: 200px;"></div>
+                        <div class="post-content">
+                            <div class="skeleton skeleton-text" style="width: 30%;"></div>
+                            <div class="skeleton skeleton-title"></div>
+                            <div class="skeleton skeleton-text"></div>
+                            <div class="skeleton skeleton-text" style="width: 80%;"></div>
+                            <div class="skeleton skeleton-text" style="width: 60%;"></div>
+                        </div>
+                    </div>
+                    <div class="post-card">
+                        <div class="skeleton" style="height: 200px;"></div>
+                        <div class="post-content">
+                            <div class="skeleton skeleton-text" style="width: 30%;"></div>
+                            <div class="skeleton skeleton-title"></div>
+                            <div class="skeleton skeleton-text"></div>
+                            <div class="skeleton skeleton-text" style="width: 80%;"></div>
+                            <div class="skeleton skeleton-text" style="width: 60%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Refresh Button -->
+                <button class="refresh-btn" onclick="loadRandomPosts()">
+                    🔄 Load Different Reviews
+                </button>
+
+                <!-- No Posts State (Hidden by default) -->
+                <div class="no-posts hidden" id="noPosts">
+                    <div class="no-posts-icon">📝</div>
+                    <h3>No Reviews Yet</h3>
+                    <p>Check back soon for our latest product reviews and buying guides!</p>
+                    <a href="/admin.html" class="refresh-btn" style="text-decoration: none;">Create First Review</a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <h3>ReviewIndex</h3>
+                <p>Your trusted source for honest product reviews and buying advice</p>
+                <div class="footer-links">
+                    <a href="#privacy">Privacy Policy</a>
+                    <a href="#terms">Terms of Service</a>
+                    <a href="/admin.html">Admin</a>
+                    <a href="/editor.html">Editor</a>
+                </div>
+                <div class="copyright">
+                    &copy; 2024 ReviewIndex. All rights reserved.
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Configuration
+        const API_ENDPOINT = '/api/list-posts';
+        let allPosts = [];
+        let displayedPosts = new Set();
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadRandomPosts();
+            initializeSearch();
+        });
+
+        // Load posts from GitHub
+        async function loadRandomPosts() {
+            try {
+                showLoadingState();
+                
+                const response = await fetch(API_ENDPOINT);
+                const result = await response.json();
+
+                if (result.success && result.posts.length > 0) {
+                    allPosts = result.posts;
+                    displayRandomPosts();
+                } else {
+                    showNoPostsState();
+                }
+            } catch (error) {
+                console.error('Error loading posts:', error);
+                showErrorState();
+            }
+        }
+
+        // Display random posts (max 6)
+        function displayRandomPosts() {
+            const postsGrid = document.getElementById('postsGrid');
+            const availablePosts = allPosts.filter(post => !displayedPosts.has(post.filename));
+            
+            // If we've shown all posts, reset the set
+            if (availablePosts.length === 0) {
+                displayedPosts.clear();
+            }
+
+            // Shuffle and select up to 6 posts
+            const shuffled = [...allPosts].sort(() => 0.5 - Math.random());
+            const selectedPosts = shuffled.slice(0, 6);
+
+            // Update displayed posts set
+            selectedPosts.forEach(post => displayedPosts.add(post.filename));
+
+            // Fetch and display each post's content
+            postsGrid.innerHTML = '';
+            selectedPosts.forEach(post => {
+                fetchPostContent(post);
+            });
+
+            // Hide no posts state
+            document.getElementById('noPosts').classList.add('hidden');
+        }
+
+        // Fetch individual post content
+        async function fetchPostContent(post) {
+            try {
+                // Since we can't fetch individual post content directly from GitHub API without authentication,
+                // we'll create a placeholder and link to the actual post URL
+                const postUrl = `/review/${post.filename.replace('.md', '')}`;
+                
+                const postCard = createPostCard({
+                    title: formatTitle(post.filename),
+                    excerpt: 'Comprehensive review and analysis...',
+                    image: '/placeholder-image.jpg',
+                    category: 'Review',
+                    rating: '4',
+                    date: 'Recent',
+                    url: postUrl,
+                    filename: post.filename
+                });
+
+                document.getElementById('postsGrid').appendChild(postCard);
+
+                // Try to fetch actual post data if possible
+                try {
+                    const postResponse = await fetch(postUrl);
+                    if (postResponse.ok) {
+                        // If we can access the post, we could parse it here
+                        // This would require additional API endpoints
+                    }
+                } catch (e) {
+                    // Continue with placeholder data
+                }
+
+            } catch (error) {
+                console.error('Error fetching post content:', error);
+            }
+        }
+
+        // Create post card HTML
+        function createPostCard(post) {
+            const card = document.createElement('div');
+            card.className = 'post-card';
+            card.innerHTML = `
+                <img src="${post.image}" alt="${post.title}" class="post-image" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTViOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlJldmlldyBJbWFnZTwvdGV4dD48L3N2Zz4='">
+                <div class="post-content">
+                    <span class="post-category">${post.category}</span>
+                    <h3 class="post-title">
+                        <a href="${post.url}">${post.title}</a>
+                    </h3>
+                    <p class="post-excerpt">${post.excerpt}</p>
+                    <div class="post-meta">
+                        <div class="post-rating">
+                            ${'⭐'.repeat(parseInt(post.rating))} ${post.rating}/5
+                        </div>
+                        <span class="post-date">${post.date}</span>
+                    </div>
+                </div>
+            `;
+            return card;
+        }
+
+        // Format filename to title
+        function formatTitle(filename) {
+            return filename
+                .replace('.md', '')
+                .replace(/-/g, ' ')
+                .replace(/\b\w/g, l => l.toUpperCase());
+        }
+
+        // Show loading state
+        function showLoadingState() {
+            const postsGrid = document.getElementById('postsGrid');
+            postsGrid.innerHTML = `
+                <div class="post-card">
+                    <div class="skeleton" style="height: 200px;"></div>
+                    <div class="post-content">
+                        <div class="skeleton skeleton-text" style="width: 30%;"></div>
+                        <div class="skeleton skeleton-title"></div>
+                        <div class="skeleton skeleton-text"></div>
+                        <div class="skeleton skeleton-text" style="width: 80%;"></div>
+                        <div class="skeleton skeleton-text" style="width: 60%;"></div>
+                    </div>
+                </div>
+            `.repeat(3);
+        }
+
+        // Show no posts state
+        function showNoPostsState() {
+            document.getElementById('postsGrid').innerHTML = '';
+            document.getElementById('noPosts').classList.remove('hidden');
+        }
+
+        // Show error state
+        function showErrorState() {
+            const postsGrid = document.getElementById('postsGrid');
+            postsGrid.innerHTML = `
+                <div class="no-posts">
+                    <div class="no-posts-icon">⚠️</div>
+                    <h3>Unable to Load Reviews</h3>
+                    <p>Please check your connection and try again.</p>
+                    <button class="refresh-btn" onclick="loadRandomPosts()">Try Again</button>
+                </div>
+            `;
+        }
+
+        // Initialize search functionality
+        function initializeSearch() {
+            const searchInput = document.getElementById('searchInput');
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchPosts();
+                }
+            });
+        }
+
+        // Search posts (placeholder - would need search functionality)
+        function searchPosts() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (query) {
+                // Redirect to search page or filter posts
+                alert('Search functionality coming soon! Currently showing random reviews.');
+                loadRandomPosts();
+            }
+        }
+
+        // Add structured data for each post (would be dynamic in real implementation)
+        function addPostStructuredData(post) {
+            const script = document.createElement('script');
+            script.type = 'application/ld+json';
+            script.textContent = JSON.stringify({
+                "@context": "https://schema.org",
+                "@type": "Product",
+                "name": post.title,
+                "description": post.excerpt,
+                "review": {
+                    "@type": "Review",
+                    "reviewRating": {
+                        "@type": "Rating",
+                        "ratingValue": post.rating,
+                        "bestRating": "5"
+                    },
+                    "author": {
+                        "@type": "Person",
+                        "name": "ReviewIndex"
+                    }
+                }
+            });
+            document.head.appendChild(script);
+        }
+    </script>
+</body>
+</html>
