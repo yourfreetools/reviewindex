@@ -252,17 +252,6 @@
             flex-direction: column;
         }
 
-        .post-category {
-            display: inline-block;
-            background: var(--primary-light);
-            color: var(--primary);
-            padding: 0.3rem 0.8rem;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-
         .post-title {
             font-size: 1.3rem;
             font-weight: 600;
@@ -294,7 +283,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-top: 1rem;
+            margin-top: auto;
             padding-top: 1rem;
             border-top: 1px solid var(--gray-200);
         }
@@ -312,12 +301,12 @@
             font-size: 0.9rem;
         }
 
-        /* Read Review Button */
+        /* Read Review Button - Small */
         .read-review-btn {
             background: var(--primary);
             color: white;
             border: none;
-            padding: 0.8rem 1.5rem;
+            padding: 0.5rem 1rem;
             border-radius: var(--radius);
             font-weight: 600;
             cursor: pointer;
@@ -325,13 +314,13 @@
             text-decoration: none;
             text-align: center;
             display: inline-block;
-            margin-top: auto;
-            width: 100%;
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
         }
 
         .read-review-btn:hover {
             background: var(--primary-dark);
-            transform: translateY(-2px);
+            transform: translateY(-1px);
         }
 
         /* Loading States */
@@ -508,34 +497,31 @@
                     <div class="post-card">
                         <div class="skeleton" style="height: 200px;"></div>
                         <div class="post-content">
-                            <div class="skeleton skeleton-text" style="width: 30%;"></div>
                             <div class="skeleton skeleton-title"></div>
                             <div class="skeleton skeleton-text"></div>
                             <div class="skeleton skeleton-text" style="width: 80%;"></div>
                             <div class="skeleton skeleton-text" style="width: 60%;"></div>
-                            <div class="skeleton" style="height: 44px; margin-top: 1rem;"></div>
+                            <div class="skeleton" style="height: 20px; width: 100px; margin-top: 1rem;"></div>
                         </div>
                     </div>
                     <div class="post-card">
                         <div class="skeleton" style="height: 200px;"></div>
                         <div class="post-content">
-                            <div class="skeleton skeleton-text" style="width: 30%;"></div>
                             <div class="skeleton skeleton-title"></div>
                             <div class="skeleton skeleton-text"></div>
                             <div class="skeleton skeleton-text" style="width: 80%;"></div>
                             <div class="skeleton skeleton-text" style="width: 60%;"></div>
-                            <div class="skeleton" style="height: 44px; margin-top: 1rem;"></div>
+                            <div class="skeleton" style="height: 20px; width: 100px; margin-top: 1rem;"></div>
                         </div>
                     </div>
                     <div class="post-card">
                         <div class="skeleton" style="height: 200px;"></div>
                         <div class="post-content">
-                            <div class="skeleton skeleton-text" style="width: 30%;"></div>
                             <div class="skeleton skeleton-title"></div>
                             <div class="skeleton skeleton-text"></div>
                             <div class="skeleton skeleton-text" style="width: 80%;"></div>
                             <div class="skeleton skeleton-text" style="width: 60%;"></div>
-                            <div class="skeleton" style="height: 44px; margin-top: 1rem;"></div>
+                            <div class="skeleton" style="height: 20px; width: 100px; margin-top: 1rem;"></div>
                         </div>
                     </div>
                 </div>
@@ -633,52 +619,16 @@
             document.getElementById('noPosts').classList.add('hidden');
         }
 
-        // Fetch individual post content
-        async function fetchPostContent(post) {
-            try {
-                // Since we can't fetch individual post content directly from GitHub API without authentication,
-                // we'll create a placeholder and link to the actual post URL
-                const postUrl = `/review/${post.filename.replace('.md', '')}`;
-                
-                const postCard = createPostCard({
-                    title: formatTitle(post.filename),
-                    excerpt: 'Comprehensive review and analysis...',
-                    image: '/placeholder-image.jpg',
-                    category: 'Review',
-                    rating: '4',
-                    date: 'Recent',
-                    url: postUrl,
-                    filename: post.filename
-                });
-
-                document.getElementById('postsGrid').appendChild(postCard);
-
-                // Try to fetch actual post data if possible
-                try {
-                    const postResponse = await fetch(postUrl);
-                    if (postResponse.ok) {
-                        // If we can access the post, we could parse it here
-                        // This would require additional API endpoints
-                    }
-                } catch (e) {
-                    // Continue with placeholder data
-                }
-
-            } catch (error) {
-                console.error('Error fetching post content:', error);
-            }
-        }
-
         // Create post card HTML
         function createPostCard(post) {
             const card = document.createElement('div');
             card.className = 'post-card';
             card.innerHTML = `
-                <img src="${post.image}" alt="${post.title}" class="post-image" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTViOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlJldmlldyBJbWFnZTwvdGV4dD48L3N2Zz4='">
+                <img src="${post.image || getPlaceholderImage()}" alt="${post.title}" class="post-image" 
+                     onerror="this.src='${getPlaceholderImage()}'">
                 <div class="post-content">
-                    <span class="post-category">${post.category}</span>
                     <h3 class="post-title">
-                        <a href="${post.url}">${post.title}</a>
+                        <a href="/review/${post.filename.replace('.md', '')}">${post.title}</a>
                     </h3>
                     <p class="post-excerpt">${post.excerpt}</p>
                     <div class="post-meta">
@@ -687,10 +637,65 @@
                         </div>
                         <span class="post-date">${post.date}</span>
                     </div>
-                    <a href="${post.url}" class="read-review-btn">Read Full Review</a>
+                    <a href="/review/${post.filename.replace('.md', '')}" class="read-review-btn">Read Review</a>
                 </div>
             `;
             return card;
+        }
+
+        function getPlaceholderImage() {
+            return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzljYTViOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlJldmlldyBJbWFnZTwvdGV4dD48L3N2Zz4=';
+        }
+
+        // Update the fetchPostContent function to get actual post data:
+        async function fetchPostContent(post) {
+            try {
+                const postUrl = `/review/${post.filename.replace('.md', '')}`;
+                
+                // Try to fetch post metadata from GitHub
+                const response = await fetch(`/api/get-post?filename=${encodeURIComponent(post.filename)}`);
+                if (response.ok) {
+                    const postData = await response.json();
+                    const postCard = createPostCard({
+                        title: postData.frontmatter?.title || formatTitle(post.filename),
+                        excerpt: postData.frontmatter?.description || 'Comprehensive review and analysis...',
+                        image: postData.frontmatter?.image || getPlaceholderImage(),
+                        rating: postData.frontmatter?.rating || '4',
+                        date: postData.frontmatter?.date ? new Date(postData.frontmatter.date).toLocaleDateString() : 'Recent',
+                        url: postUrl,
+                        filename: post.filename
+                    });
+                    document.getElementById('postsGrid').appendChild(postCard);
+                    return;
+                }
+                
+                // Fallback to basic card if API fails
+                const fallbackCard = createPostCard({
+                    title: formatTitle(post.filename),
+                    excerpt: 'Comprehensive review and analysis...',
+                    image: getPlaceholderImage(),
+                    rating: '4',
+                    date: 'Recent',
+                    url: postUrl,
+                    filename: post.filename
+                });
+                document.getElementById('postsGrid').appendChild(fallbackCard);
+                
+            } catch (error) {
+                console.error('Error fetching post content:', error);
+                // Return basic card as fallback
+                const postUrl = `/review/${post.filename.replace('.md', '')}`;
+                const fallbackCard = createPostCard({
+                    title: formatTitle(post.filename),
+                    excerpt: 'Comprehensive review and analysis...',
+                    image: getPlaceholderImage(),
+                    rating: '4',
+                    date: 'Recent',
+                    url: postUrl,
+                    filename: post.filename
+                });
+                document.getElementById('postsGrid').appendChild(fallbackCard);
+            }
         }
 
         // Format filename to title
@@ -708,12 +713,11 @@
                 <div class="post-card">
                     <div class="skeleton" style="height: 200px;"></div>
                     <div class="post-content">
-                        <div class="skeleton skeleton-text" style="width: 30%;"></div>
                         <div class="skeleton skeleton-title"></div>
                         <div class="skeleton skeleton-text"></div>
                         <div class="skeleton skeleton-text" style="width: 80%;"></div>
                         <div class="skeleton skeleton-text" style="width: 60%;"></div>
-                        <div class="skeleton" style="height: 44px; margin-top: 1rem;"></div>
+                        <div class="skeleton" style="height: 20px; width: 100px; margin-top: 1rem;"></div>
                     </div>
                 </div>
             `.repeat(3);
@@ -784,4 +788,4 @@
         }
     </script>
 </body>
-</html>
+    </html>
