@@ -1,75 +1,69 @@
-// functions/api/list-posts.js
 export async function onRequestGet(context) {
-    const corsHeaders = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    };
-
     try {
-        const { GITHUB_TOKEN } = context.env;
+        console.log('Fetching posts from GitHub...');
         
-        if (!GITHUB_TOKEN) {
-            return errorResponse('GITHUB_TOKEN not configured', 500, corsHeaders);
-        }
-
-        const REPO_OWNER = 'yourfreetools';
-        const REPO_NAME = 'reviewindex';
-        
-        const response = await fetch(
-            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/content/reviews`,
-            {
-                headers: {
-                    'Authorization': `token ${GITHUB_TOKEN}`,
-                    'User-Agent': 'Review-Index-App'
-                }
+        // Your GitHub repository details
+        const response = await fetch('https://api.github.com/repos/yourfreetools/reviewindex/contents/content/reviews', {
+            headers: {
+                'Authorization': `token ${context.env.GITHUB_TOKEN}`,
+                'User-Agent': 'ReviewIndex-API',
+                'Accept': 'application/vnd.github.v3+json'
             }
-        );
+        });
+
+        console.log('GitHub API response status:', response.status);
 
         if (!response.ok) {
-            return errorResponse('Failed to fetch posts', response.status, corsHeaders);
+            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
         }
 
         const files = await response.json();
+        console.log(`Found ${files.length} files in repository`);
+
+        // Filter only markdown files and create post objects
         const posts = files
             .filter(file => file.name.endsWith('.md'))
-            .map(file => ({
-                filename: file.name,
-                path: file.path,
-                url: file.download_url,
-                size: file.size,
-                sha: file.sha
-            }));
+            .map(file => {
+                const slug = file.name.replace('.md', '');
+                return {
+                    filename: file.name,
+                    title: slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                    excerpt: 'Comprehensive review and analysis...',
+                    image: null,
+                    rating: '4',
+                    date: new Date().toISOString().split('T')[0],
+                    url: `/review/${slug}`
+                };
+            });
 
-        return successResponse({ posts }, corsHeaders);
+        console.log(`Processed ${posts.length} posts`);
+
+        return new Response(JSON.stringify({
+            success: true,
+            posts: posts,
+            count: posts.length,
+            lastUpdated: new Date().toISOString()
+        }), {
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'public, max-age=300'
+            }
+        });
 
     } catch (error) {
-        return errorResponse(error.message, 500, corsHeaders);
+        console.error('Error in list-posts API:', error);
+        
+        return new Response(JSON.stringify({
+            success: false,
+            error: error.message,
+            timestamp: new Date().toISOString()
+        }), {
+            status: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            }
+        });
     }
-}
-
-function errorResponse(message, status, headers) {
-    return new Response(JSON.stringify({ 
-        success: false, 
-        message 
-    }), {
-        status,
-        headers: { 
-            ...headers, 
-            'Content-Type': 'application/json' 
-        },
-    });
-}
-
-function successResponse(data, headers) {
-    return new Response(JSON.stringify({ 
-        success: true, 
-        ...data 
-    }), {
-        status: 200,
-        headers: { 
-            ...headers, 
-            'Content-Type': 'application/json' 
-        },
-    });
 }
