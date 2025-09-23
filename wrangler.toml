@@ -1,7 +1,14 @@
 # wrangler.toml
 name = "reviewindex"
-compatibility_date = "2024-01-01"
-pages_build_output_dir = "./"
+pages_build_output_dir = ""
+
+[[functions]]
+include = ["functions/**/*.js]
+
+[functions.assets]
+bucket = ""
+include = ["*.html", "*.css", "*.js"]
+exclude = ["node_modules", "*.ts"]
 
 [env.production]
-# No additional configuration needed for Pages
+# Add any production-specific configuration
