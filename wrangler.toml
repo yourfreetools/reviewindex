@@ -4,33 +4,5 @@ compatibility_date = "2024-01-01"
 pages_build_output_dir = "./dist"
 
 [env.production]
-# GitHub token for accessing your repository
 GITHUB_TOKEN = "@github_token"
-# Your actual domain
 SITE_URL = "https://reviewindex.pages.dev"
-
-# Functions configuration
-[[functions]]
-include = ["functions/**/*.js"]
-
-# Assets to include in deployment
-[functions.assets]
-include = ["*.html", "*.css", "*.js", "*.png", "*.jpg", "*.svg"]
-exclude = ["node_modules", "*.ts", "*.map"]
-
-# Routes configuration
-[[routes]]
-pattern = "sitemap.xml"
-custom_domain = false
-
-[[routes]]
-pattern = "robots.txt"
-custom_domain = false
-
-[[routes]]
-pattern = "/api/*"
-custom_domain = false
-
-[[routes]]
-pattern = "/*"
-custom_domain = false
