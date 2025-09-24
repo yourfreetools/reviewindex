@@ -539,7 +539,7 @@ Slightly expensive"></textarea>
                 ${data.image ? `<img src="${data.image}" style="max-width: 100%; height: auto;" alt="${data.title}">` : ''}
                 <div class="rating">Rating: ${'⭐'.repeat(data.rating)}</div>
                 <hr>
-                <div>${data.content.replace(/\n/g, '<br>')}</div>
+                <div>${convertMarkdownToHTML(data.content)}</div>
                 ${data.keyFeatures ? `<h4>Key Features:</h4><ul>${data.keyFeatures.split('\n').map(f => `<li>${f}</li>`).join('')}</ul>` : ''}
                 ${data.pros ? `<h4>Pros:</h4><ul>${data.pros.split('\n').map(p => `<li>${p}</li>`).join('')}</ul>` : ''}
                 ${data.cons ? `<h4>Cons:</h4><ul>${data.cons.split('\n').map(c => `<li>${c}</li>`).join('')}</ul>` : ''}
