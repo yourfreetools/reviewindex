@@ -4,7 +4,7 @@ description: "Comprehensive review of Oraimo Traveler Link 20 Power Bank coverin
 image: ""
 rating: 4
 affiliateLink: ""
-youtubeId: ""
+youtubeId: "https://cdn-img.oraimo.com/fit-in/600x600/KE/product/2024/02/06/680.png"
 categories: ["reviews", "electronics"]
 date: "2025-09-24T22:35:36.891Z"
 slug: "best-oraimo-traveler-link-20-power-bank-2024-honest-review"
