@@ -1,10 +1,18 @@
 async function renderPostPage(markdownContent, slug, requestUrl) {
     // Parse frontmatter and content
     const { frontmatter, content } = parseMarkdown(markdownContent);
-    
-    // Convert markdown to HTML (pass content only)
+
+    // Convert markdown to HTML
     const htmlContent = convertMarkdownToHTML(content);
-    
+
+    // Turn pros/cons into lists
+    const prosList = frontmatter.pros
+        ? frontmatter.pros.split(';').map(item => `<li>${item.trim()}</li>`).join('')
+        : '';
+    const consList = frontmatter.cons
+        ? frontmatter.cons.split(';').map(item => `<li>${item.trim()}</li>`).join('')
+        : '';
+
     return `
 <!DOCTYPE html>
 <html lang="en">
@@ -17,7 +25,7 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
     <meta property="og:description" content="${frontmatter.description || 'Product review and analysis'}">
     <meta property="og:type" content="article">
     ${frontmatter.image ? `<meta property="og:image" content="${frontmatter.image}">` : ''}
-    
+
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -65,6 +73,30 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
             font-size: 0.95rem;
             color: #444;
         }
+        .pros-cons {
+            display: flex;
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+        .pros, .cons {
+            flex: 1;
+            padding: 1rem;
+            border-radius: 8px;
+        }
+        .pros {
+            background: #ecfdf5;
+            border: 1px solid #10b981;
+        }
+        .cons {
+            background: #fef2f2;
+            border: 1px solid #ef4444;
+        }
+        .pros h3, .cons h3 {
+            margin-bottom: 0.5rem;
+        }
+        .pros ul, .cons ul {
+            padding-left: 1.2rem;
+        }
         .content { 
             font-size: 1.1rem; 
             line-height: 1.8;
@@ -97,7 +129,14 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
             <strong>Published:</strong> ${frontmatter.date || 'Recently'} | 
             <strong>Categories:</strong> ${frontmatter.categories || 'Review'}
         </div>
-        
+
+        ${(prosList || consList) ? `
+        <div class="pros-cons">
+            ${prosList ? `<div class="pros"><h3>Pros</h3><ul>${prosList}</ul></div>` : ''}
+            ${consList ? `<div class="cons"><h3>Cons</h3><ul>${consList}</ul></div>` : ''}
+        </div>
+        ` : ''}
+
         <div class="content">
             ${htmlContent}
         </div>
@@ -116,18 +155,4 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
     </div>
 </body>
 </html>`;
-}
-
-function convertMarkdownToHTML(markdown) {
-    // Simple markdown to HTML conversion
-    return markdown
-        .replace(/^>\s?(.*)$/gm, '<blockquote>$1</blockquote>') // handle blockquotes properly
-        .replace(/\n/g, '<br>')
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em>$1</em>')
-        .replace(/### (.*?)(<br>|$)/g, '<h3>$1</h3>')
-        .replace(/## (.*?)(<br>|$)/g, '<h2>$1</h2>')
-        .replace(/# (.*?)(<br>|$)/g, '<h1>$1</h1>')
-        .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1">')
-        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
 }
