@@ -1,61 +1,10 @@
-export async function onRequest(context) {
-    const { request, params } = context;
-    const slug = params.slug;
-    
-    try {
-        if (slug.endsWith('.md')) {
-            const cleanSlug = slug.replace('.md', '');
-            return Response.redirect(`${new URL(request.url).origin}/review/${cleanSlug}`, 301);
-        }
-
-        const postContent = await fetchPostContent(slug, context.env.GITHUB_TOKEN);
-        if (!postContent) {
-            return renderErrorPage('Review not found', 'The requested review could not be found.');
-        }
-
-        const htmlContent = await renderPostPage(postContent, slug, request.url);
-        return new Response(htmlContent, {
-            headers: { 'Content-Type': 'text/html; charset=utf-8' }
-        });
-
-    } catch (error) {
-        return renderErrorPage('Server Error', 'An error occurred while loading the review.');
-    }
-}
-
-async function fetchPostContent(slug, githubToken) {
-    const REPO_OWNER = 'yourfreetools';
-    const REPO_NAME = 'reviewindex';
-    const filePath = `content/reviews/${slug}.md`;
-
-    try {
-        const response = await fetch(
-            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${filePath}`,
-            {
-                headers: {
-                    'Authorization': `token ${githubToken}`,
-                    'User-Agent': 'Review-Index-App',
-                    'Accept': 'application/vnd.github.v3.raw'
-                }
-            }
-        );
-
-        if (response.status === 200) {
-            return await response.text();
-        }
-        return null;
-    } catch (error) {
-        console.error('Error fetching post:', error);
-        return null;
-    }
-}
-
 async function renderPostPage(markdownContent, slug, requestUrl) {
+    // Parse frontmatter and content
     const { frontmatter, content } = parseMarkdown(markdownContent);
-
-    // Convert markdown to HTML but remove frontmatter image markdown to avoid duplicate
-    const htmlContent = convertMarkdownToHTML(content, frontmatter.image);
-
+    
+    // Convert markdown to HTML (pass content only)
+    const htmlContent = convertMarkdownToHTML(content);
+    
     return `
 <!DOCTYPE html>
 <html lang="en">
@@ -96,6 +45,26 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
             font-size: 1.5rem; 
             margin: 1rem 0;
         }
+        .description {
+            font-size: 1.1rem;
+            margin: 1rem 0;
+            color: #555;
+        }
+        .frontmatter-image {
+            display: block;
+            max-width: 600px;
+            height: auto;
+            margin: 2rem auto;
+            border-radius: 10px;
+        }
+        .meta-info {
+            background: #f8fafc;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0 2rem 0;
+            font-size: 0.95rem;
+            color: #444;
+        }
         .content { 
             font-size: 1.1rem; 
             line-height: 1.8;
@@ -112,12 +81,6 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
             color: #2563eb; 
             text-decoration: none;
         }
-        .meta-info {
-            background: #f8fafc;
-            padding: 1rem;
-            border-radius: 8px;
-            margin: 1rem 0;
-        }
     </style>
 </head>
 <body>
@@ -125,11 +88,10 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
         <div class="header">
             <h1>${frontmatter.title || formatSlug(slug)}</h1>
             ${frontmatter.rating ? `<div class="rating">${'⭐'.repeat(parseInt(frontmatter.rating))} ${frontmatter.rating}/5</div>` : ''}
-            ${frontmatter.description ? `<p>${frontmatter.description}</p>` : ''}
+            ${frontmatter.description ? `<p class="description">${frontmatter.description}</p>` : ''}
         </div>
         
-        <!-- Render only frontmatter image -->
-        ${frontmatter.image ? `<img src="${frontmatter.image}" alt="${frontmatter.title || 'Product image'}">` : ''}
+        ${frontmatter.image ? `<img src="${frontmatter.image}" alt="${frontmatter.title || 'Product image'}" class="frontmatter-image">` : ''}
         
         <div class="meta-info">
             <strong>Published:</strong> ${frontmatter.date || 'Recently'} | 
@@ -156,44 +118,10 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
 </html>`;
 }
 
-function parseMarkdown(content) {
-    const frontmatter = {};
-    let markdownContent = content;
-    
-    if (content.startsWith('---')) {
-        const end = content.indexOf('---', 3);
-        if (end !== -1) {
-            const yaml = content.substring(3, end).trim();
-            markdownContent = content.substring(end + 3).trim();
-            
-            yaml.split('\n').forEach(line => {
-                const colon = line.indexOf(':');
-                if (colon > 0) {
-                    const key = line.substring(0, colon).trim();
-                    let value = line.substring(colon + 1).trim();
-                    
-                    if (value.startsWith('"') && value.endsWith('"')) {
-                        value = value.substring(1, value.length - 1);
-                    }
-                    
-                    frontmatter[key] = value;
-                }
-            });
-        }
-    }
-    
-    return { frontmatter, content: markdownContent };
-}
-
-function convertMarkdownToHTML(markdown, frontmatterImage) {
-    // Remove frontmatter image markdown to avoid duplicate
-    if (frontmatterImage) {
-        const escapedImage = frontmatterImage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`!\\[.*?\\]\\(${escapedImage}\\)`, 'g');
-        markdown = markdown.replace(regex, '');
-    }
-
+function convertMarkdownToHTML(markdown) {
+    // Simple markdown to HTML conversion
     return markdown
+        .replace(/^>\s?(.*)$/gm, '<blockquote>$1</blockquote>') // handle blockquotes properly
         .replace(/\n/g, '<br>')
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
@@ -202,38 +130,4 @@ function convertMarkdownToHTML(markdown, frontmatterImage) {
         .replace(/# (.*?)(<br>|$)/g, '<h1>$1</h1>')
         .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1">')
         .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
-}
-
-function formatSlug(slug) {
-    return slug.split('-').map(word => 
-        word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ');
-}
-
-function renderErrorPage(title, message) {
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>${title} - ReviewIndex</title>
-    <style>
-        body { font-family: system-ui; text-align: center; padding: 4rem; background: #f5f5f5; }
-        .error-container { background: white; padding: 3rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { color: #dc2626; margin-bottom: 1rem; }
-        a { color: #2563eb; text-decoration: none; }
-    </style>
-</head>
-<body>
-    <div class="error-container">
-        <h1>⚠️ ${title}</h1>
-        <p>${message}</p>
-        <p><a href="/">← Return to Homepage</a></p>
-    </div>
-</body>
-</html>`;
-    
-    return new Response(html, { 
-        status: 404,
-        headers: { 'Content-Type': 'text/html' }
-    });
 }
