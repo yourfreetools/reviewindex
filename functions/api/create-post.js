@@ -142,7 +142,7 @@ draft: false
 
 ${data.image ? `![${data.title}](${data.image})` : ''}
 
-${data.description ? `> ${data.description}` : ''}
+${data.description ? ` ${data.description}` : ''}
 
 ${data.content || '## Introduction\n\nStart your comprehensive review here...'}
 
