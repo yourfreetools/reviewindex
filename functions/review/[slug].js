@@ -133,9 +133,6 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
             ${frontmatter.rating ? `<div class="rating">${'⭐'.repeat(parseInt(frontmatter.rating))} ${frontmatter.rating}/5</div>` : ''}
             ${frontmatter.description ? `<p>${frontmatter.description}</p>` : ''}
         </div>
-        
-        ${frontmatter.image ? `<img src="${frontmatter.image}" alt="${frontmatter.title || 'Product image'}">` : ''}
-        
         <div class="meta-info">
             <strong>Published:</strong> ${frontmatter.date || 'Recently'} | 
             <strong>Categories:</strong> ${frontmatter.categories || 'Review'}
