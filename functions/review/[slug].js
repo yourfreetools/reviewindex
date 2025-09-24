@@ -1,18 +1,23 @@
+// functions/review/[...slug].js
 export async function onRequest(context) {
     const { request, params } = context;
     const slug = params.slug;
     
     try {
+        // If it's a direct file request for .md, redirect to proper URL
         if (slug.endsWith('.md')) {
             const cleanSlug = slug.replace('.md', '');
             return Response.redirect(`${new URL(request.url).origin}/review/${cleanSlug}`, 301);
         }
 
+        // Fetch the markdown content from GitHub
         const postContent = await fetchPostContent(slug, context.env.GITHUB_TOKEN);
+        
         if (!postContent) {
             return renderErrorPage('Review not found', 'The requested review could not be found.');
         }
 
+        // Convert markdown to HTML and render the post
         const htmlContent = await renderPostPage(postContent, slug, request.url);
         return new Response(htmlContent, {
             headers: { 'Content-Type': 'text/html; charset=utf-8' }
@@ -51,11 +56,12 @@ async function fetchPostContent(slug, githubToken) {
 }
 
 async function renderPostPage(markdownContent, slug, requestUrl) {
+    // Parse frontmatter and content
     const { frontmatter, content } = parseMarkdown(markdownContent);
-
-    // Convert markdown to HTML but remove frontmatter image markdown to avoid duplicate
-    const htmlContent = convertMarkdownToHTML(content, frontmatter.image);
-
+    
+    // Convert markdown to HTML (simplified version - you might want to use a proper library)
+    const htmlContent = convertMarkdownToHTML(content);
+    
     return `
 <!DOCTYPE html>
 <html lang="en">
@@ -128,7 +134,6 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
             ${frontmatter.description ? `<p>${frontmatter.description}</p>` : ''}
         </div>
         
-        <!-- Render only frontmatter image -->
         ${frontmatter.image ? `<img src="${frontmatter.image}" alt="${frontmatter.title || 'Product image'}">` : ''}
         
         <div class="meta-info">
@@ -160,6 +165,7 @@ function parseMarkdown(content) {
     const frontmatter = {};
     let markdownContent = content;
     
+    // Parse YAML frontmatter
     if (content.startsWith('---')) {
         const end = content.indexOf('---', 3);
         if (end !== -1) {
@@ -172,6 +178,7 @@ function parseMarkdown(content) {
                     const key = line.substring(0, colon).trim();
                     let value = line.substring(colon + 1).trim();
                     
+                    // Remove quotes
                     if (value.startsWith('"') && value.endsWith('"')) {
                         value = value.substring(1, value.length - 1);
                     }
@@ -185,14 +192,8 @@ function parseMarkdown(content) {
     return { frontmatter, content: markdownContent };
 }
 
-function convertMarkdownToHTML(markdown, frontmatterImage) {
-    // Remove frontmatter image markdown to avoid duplicate
-    if (frontmatterImage) {
-        const escapedImage = frontmatterImage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`!\\[.*?\\]\\(${escapedImage}\\)`, 'g');
-        markdown = markdown.replace(regex, '');
-    }
-
+function convertMarkdownToHTML(markdown) {
+    // Simple markdown to HTML conversion
     return markdown
         .replace(/\n/g, '<br>')
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
