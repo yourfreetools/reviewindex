@@ -197,6 +197,7 @@ function convertMarkdownToHTML(markdown) {
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
         .replace(/### (.*?)(<br>|$)/g, '<h3>$1</h3>')
         .replace(/## (.*?)(<br>|$)/g, '<h2>$1</h2>')
+        .replace(/# (.*?)(<br>|$)/g, '<h2>$1</h2>')
         .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1">')
         .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
 }
