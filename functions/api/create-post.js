@@ -34,6 +34,8 @@ export async function onRequestPost(context) {
             rating = '4',
             affiliateLink, 
             youtubeLink, 
+            keyFeatures, // NEW FIELD
+            finalVerdict, // NEW FIELD
             pros, 
             cons, 
             categories 
@@ -59,6 +61,8 @@ export async function onRequestPost(context) {
             rating,
             affiliateLink: affiliateLink?.trim(),
             youtubeLink: youtubeLink?.trim(),
+            keyFeatures: keyFeatures?.trim(), // NEW FIELD
+            finalVerdict: finalVerdict?.trim(), // NEW FIELD
             pros: pros?.trim(),
             cons: cons?.trim(),
             categories: categories?.trim()
@@ -114,6 +118,7 @@ function generateSEOMarkdown(data) {
     const seoSlug = generateSlug(data.title);
 
     // Generate lists
+    const keyFeaturesList = data.keyFeatures?.split('\n').filter(f => f.trim()).map(f => `- ${f.trim()}`).join('\n');
     const prosList = data.pros?.split('\n').filter(p => p.trim()).map(p => `- ${p.trim()}`).join('\n');
     const consList = data.cons?.split('\n').filter(c => c.trim()).map(c => `- ${c.trim()}`).join('\n');
     const categoryList = data.categories ? 
@@ -141,9 +146,11 @@ ${data.description ? `> ${data.description}` : ''}
 
 ${data.content || '## Introduction\n\nStart your comprehensive review here...'}
 
+${keyFeaturesList ? `
 ## Key Features
 
-*List the main features and specifications*
+${keyFeaturesList}
+` : ''}
 
 ${prosList ? `
 ## Pros 👍
@@ -159,7 +166,7 @@ ${consList}
 
 ## Final Rating: ${data.rating || 5}/5 ⭐
 
-*Your final verdict and recommendation*
+${data.finalVerdict || '*Your final verdict and recommendation*'}
 
 ${data.affiliateLink ? `
 ## Where to Buy
@@ -219,4 +226,4 @@ async function publishToGitHub({ token, content, title, filename }) {
         path: filePath,
         siteUrl: `https://reviewindex.pages.dev/review/${filename.replace('.md', '')}`
     };
-}
+                                                                                                             }
