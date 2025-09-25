@@ -2,27 +2,53 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Latest Sitemap Links</title>
+<title>IndexNow JSON Generator</title>
 <meta name="robots" content="noindex">
 <style>
 body { font-family: sans-serif; padding: 10px; }
 textarea { width: 100%; height: 200px; margin-bottom: 10px; }
-button { padding: 10px; margin-top: 5px; }
+button { padding: 10px; margin: 5px 0; }
 #links { margin-top: 10px; max-height: 400px; overflow-y: auto; }
 label { display: block; margin-bottom: 5px; word-break: break-word; }
+#jsonOutput { width: 100%; height: 200px; margin-top: 10px; }
+.instructions { background: #f4f4f4; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
 </style>
 </head>
 <body>
-<h2>Latest Sitemap Links</h2>
+<h2>IndexNow JSON Generator</h2>
+
+<div class="instructions">
+<strong>Steps to submit:</strong>
+<ol>
+<li>Paste your sitemap XML below.</li>
+<li>Click <strong>Show Latest 10 Links</strong>.</li>
+<li>Select the links you want to submit (use Select All / Deselect All buttons if needed).</li>
+<li>Copy the generated JSON by clicking <strong>Copy JSON</strong>.</li>
+<li>Go to <a href="https://reqbin.com/" target="_blank">ReqBin</a> or another REST client.</li>
+<li>Set method: <strong>POST</strong>, URL: <strong>https://api.indexnow.org/IndexNow</strong></li>
+<li>Add header: <strong>Content-Type: application/json; charset=utf-8</strong></li>
+<li>Paste the copied JSON into the body and click Send.</li>
+</ol>
+</div>
 
 <textarea id="sitemapXml" placeholder="Paste your sitemap XML here..."></textarea>
 <br>
 <button id="loadLinks">Show Latest 10 Links</button>
-<button id="copyLinks">Copy Selected Links</button>
+<button id="selectAll">Select All</button>
+<button id="deselectAll">Deselect All</button>
+<button id="copyJson">Copy JSON to Clipboard</button>
 
 <div id="links"></div>
 
+<textarea id="jsonOutput" readonly placeholder="Generated JSON will appear here..."></textarea>
+
 <script>
+// Your IndexNow key and host
+const host = "reviewindex.pages.dev";
+const key = "fda744d3cbef4793b1af0b512bc481a0";
+const keyLocation = `https://${host}/${key}.txt`;
+
+// Load sitemap and display latest 10 posts
 document.getElementById('loadLinks').addEventListener('click', () => {
     const xmlText = document.getElementById('sitemapXml').value.trim();
     if(!xmlText) return alert("Please paste your sitemap XML.");
@@ -40,7 +66,7 @@ document.getElementById('loadLinks').addEventListener('click', () => {
             return { loc: locEl?.textContent, lastmod };
         });
 
-        // Sort by lastmod descending and take latest 10
+        // Sort by lastmod descending
         urls.sort((a, b) => new Date(b.lastmod) - new Date(a.lastmod));
         urls = urls.slice(0, 10);
 
@@ -53,28 +79,51 @@ document.getElementById('loadLinks').addEventListener('click', () => {
             checkbox.type = 'checkbox';
             checkbox.checked = true;
             checkbox.value = u.loc;
-            const a = document.createElement('a');
-            a.href = u.loc;
-            a.textContent = u.loc;
-            a.target = "_blank";
-            // No "nofollow" here — links remain crawlable
             label.appendChild(checkbox);
-            label.appendChild(a);
+            label.appendChild(document.createTextNode(" " + u.loc));
             linksDiv.appendChild(label);
         });
+
+        generateJSON();
 
     } catch (err) {
         alert("Failed to parse sitemap XML: " + err);
     }
 });
 
-// Copy button
-document.getElementById('copyLinks').addEventListener('click', () => {
-    const selected = Array.from(document.querySelectorAll('#links input:checked')).map(i => i.value);
-    if(selected.length === 0) return alert("Select at least one link to copy.");
-    navigator.clipboard.writeText(selected.join("\n"))
-        .then(() => alert("Selected links copied to clipboard!"))
+// Generate JSON for selected links
+function generateJSON() {
+    const selectedUrls = Array.from(document.querySelectorAll('#links input:checked')).map(i => i.value);
+    const payload = {
+        host,
+        key,
+        keyLocation,
+        urlList: selectedUrls
+    };
+    document.getElementById('jsonOutput').value = JSON.stringify(payload, null, 2);
+}
+
+// Update JSON when checkboxes change
+document.getElementById('links').addEventListener('change', generateJSON);
+
+// Copy JSON to clipboard
+document.getElementById('copyJson').addEventListener('click', () => {
+    const jsonText = document.getElementById('jsonOutput').value;
+    if(!jsonText) return alert("No JSON to copy!");
+    navigator.clipboard.writeText(jsonText)
+        .then(() => alert("JSON copied to clipboard!"))
         .catch(err => alert("Copy failed: " + err));
+});
+
+// Select All / Deselect All buttons
+document.getElementById('selectAll').addEventListener('click', () => {
+    document.querySelectorAll('#links input').forEach(cb => cb.checked = true);
+    generateJSON();
+});
+
+document.getElementById('deselectAll').addEventListener('click', () => {
+    document.querySelectorAll('#links input').forEach(cb => cb.checked = false);
+    generateJSON();
 });
 </script>
 </body>
