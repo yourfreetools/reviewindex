@@ -17,6 +17,8 @@ label { display: block; margin-bottom: 5px; }
 <p>Paste your sitemap XML here:</p>
 <textarea id="sitemapXml" placeholder="Paste sitemap XML here..."></textarea>
 <button id="loadSitemap">Load Sitemap</button>
+<button id="selectAll">Select All</button>
+<button id="deselectAll">Deselect All</button>
 
 <div id="urls"></div>
 <button id="submitBtn">Submit Selected URLs</button>
@@ -27,40 +29,56 @@ const key = "fda744d3cbef4793b1af0b512bc481a0";
 const host = "reviewindex.pages.dev";
 const keyLocation = `https://${host}/fda744d3cbef4793b1af0b512bc481a0.txt`;
 
+let recentUrls = [];
+
+function parseSitemap(xmlText) {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlText, "application/xml");
+    const ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
+    const urlElements = xml.getElementsByTagNameNS(ns, "url");
+
+    const urls = Array.from(urlElements).map(u => {
+        const locEl = u.getElementsByTagNameNS(ns, "loc")[0];
+        const lastmodEl = u.getElementsByTagNameNS(ns, "lastmod")[0];
+        let lastmod = lastmodEl ? lastmodEl.textContent.trim() : null;
+        if(lastmod) lastmod = lastmod.replace(/^"|"$/g, ""); // remove quotes
+        return { loc: locEl?.textContent, lastmod };
+    });
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    return urls.filter(u => u.lastmod && new Date(u.lastmod) >= yesterday);
+}
+
+function displayUrls(urls) {
+    const urlsDiv = document.getElementById('urls');
+    urlsDiv.innerHTML = "";
+    urls.forEach(u => {
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = u.loc;
+        checkbox.checked = true;
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(` ${u.loc}`));
+        urlsDiv.appendChild(label);
+    });
+    if(urls.length === 0) urlsDiv.innerHTML = "No URLs updated in the last 1 day.";
+}
+
 document.getElementById('loadSitemap').addEventListener('click', () => {
     const xmlText = document.getElementById('sitemapXml').value.trim();
     if(!xmlText) return alert("Please paste your sitemap XML.");
+    recentUrls = parseSitemap(xmlText);
+    displayUrls(recentUrls);
+});
 
-    try {
-        const parser = new DOMParser();
-        const xml = parser.parseFromString(xmlText, "application/xml");
-        const urls = Array.from(xml.querySelectorAll("url")).map(u => ({
-            loc: u.querySelector("loc")?.textContent,
-            lastmod: u.querySelector("lastmod")?.textContent
-        }));
-
-        // Filter URLs updated in last 1 day
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const recentUrls = urls.filter(u => u.lastmod && new Date(u.lastmod) >= yesterday);
-
-        const urlsDiv = document.getElementById('urls');
-        urlsDiv.innerHTML = "";
-        recentUrls.forEach(u => {
-            const label = document.createElement('label');
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.value = u.loc;
-            checkbox.checked = true;
-            label.appendChild(checkbox);
-            label.appendChild(document.createTextNode(` ${u.loc}`));
-            urlsDiv.appendChild(label);
-        });
-
-        if(recentUrls.length === 0) urlsDiv.innerHTML = "No URLs updated in the last 1 day.";
-    } catch (err) {
-        alert("Failed to parse sitemap XML: " + err);
-    }
+document.getElementById('selectAll').addEventListener('click', () => {
+    document.querySelectorAll('#urls input').forEach(i => i.checked = true);
+});
+document.getElementById('deselectAll').addEventListener('click', () => {
+    document.querySelectorAll('#urls input').forEach(i => i.checked = false);
 });
 
 document.getElementById('submitBtn').addEventListener('click', async () => {
