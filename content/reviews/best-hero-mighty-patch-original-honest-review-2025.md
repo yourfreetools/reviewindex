@@ -3,7 +3,7 @@ title: "Best Hero Mighty Patch Original – Honest Review 2025"
 description: "Comprehensive review of Hero Cosmetics Mighty Patch Original covering features, performance, and value proposition for fast‐acting acne treatment"
 image: "https://www.herocosmetics.us/cdn/shop/files/250602_MP_POD_PDP_1.jpg"
 rating: 5
-affiliateLink: ""
+affiliateLink: "https://amzn.to/3KmeI4b"
 youtubeId: ""
 categories: ["reviews", "beauty", "skincare"]
 date: "2025-09-24T22:51:03.634Z"
