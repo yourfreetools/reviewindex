@@ -3,7 +3,7 @@ title: "Best Ordinary Retinol 1% in Squalane – Honest Review 2025"
 description: "Comprehensive review of The Ordinary Retinol 1% in Squalane covering features, performance, and value proposition for skin aging and texture"
 image: "https://cdn11.bigcommerce.com/s-63354/images/stencil/1280x1280/products/2600/15176/The_Ordinary_Retinol_1_in_Squalane_30ml_1__67398.1709992538.jpg"
 rating: 4
-affiliateLink: ""
+affiliateLink: "https://amzn.to/3KjgwuR"
 youtubeId: ""
 categories: ["reviews", "beauty", "skincare"]
 date: "2025-09-24T22:45:02.308Z"
