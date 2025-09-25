@@ -4,7 +4,7 @@ description: "Comprehensive review of Grok AI covering features, performance, an
 image: "https://learnprompting.org/blog/grok-interface-research.png"
 rating: 4
 affiliateLink: ""
-youtubeId: "TUGE8HdQpeA"
+youtubeId: "https://youtu.be/TUGE8HdQpeA?si=yPvHDNn1LySPDqQg"
 categories: ["reviews", "AI", "chatbots", "xAI"]
 date: "2025-09-25T09:59:58.364Z"
 slug: "grok-ai-2024-honest-review"
