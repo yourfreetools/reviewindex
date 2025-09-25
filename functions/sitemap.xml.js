@@ -20,24 +20,24 @@ export async function onRequestGet(context) {
 // Generate main sitemap index
 async function generateMainSitemap(context) {
     const baseUrl = context.env.SITE_URL || 'https://reviewindex.pages.dev';
-    const currentDate = new Date().toISOString().split('T')[0];
+    const currentDate = new Date().toISOString(); // Full ISO format
     
     const sitemapIndex = `<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <sitemap>
         <loc>${baseUrl}/sitemap.xml?type=posts</loc>
-        <lastmod>${currentDate}</lastmod>
+        <lastmod>${formatSitemapDate(currentDate)}</lastmod>
     </sitemap>
     <sitemap>
         <loc>${baseUrl}/sitemap.xml?type=categories</loc>
-        <lastmod>${currentDate}</lastmod>
+        <lastmod>${formatSitemapDate(currentDate)}</lastmod>
     </sitemap>
 </sitemapindex>`;
 
     return new Response(sitemapIndex, {
         headers: {
             'Content-Type': 'application/xml',
-            'Cache-Control': 'public, max-age=3600' // 1 hour cache
+            'Cache-Control': 'public, max-age=3600'
         }
     });
 }
@@ -46,7 +46,7 @@ async function generateMainSitemap(context) {
 async function generatePostsSitemap(context) {
     try {
         const baseUrl = context.env.SITE_URL || 'https://reviewindex.pages.dev';
-        const currentDate = new Date().toISOString().split('T')[0];
+        const currentDate = new Date().toISOString();
         
         // Fetch posts from GitHub
         const posts = await fetchPostsFromGitHub(context);
@@ -62,7 +62,7 @@ async function generatePostsSitemap(context) {
         sitemap += `
     <url>
         <loc>${escapeXml(baseUrl)}</loc>
-        <lastmod>${currentDate}</lastmod>
+        <lastmod>${formatSitemapDate(currentDate)}</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
     </url>`;
@@ -70,13 +70,13 @@ async function generatePostsSitemap(context) {
         // Add each post
         for (const post of posts) {
             const postUrl = `${baseUrl}/review/${post.slug}`;
-            const lastmod = post.lastmod || currentDate;
+            const lastmod = post.lastmod || post.date || currentDate;
             const priority = post.featured ? '0.9' : '0.7';
             
             sitemap += `
     <url>
         <loc>${escapeXml(postUrl)}</loc>
-        <lastmod>${lastmod}</lastmod>
+        <lastmod>${formatSitemapDate(lastmod)}</lastmod>
         <changefreq>weekly</changefreq>
         <priority>${priority}</priority>`;
             
@@ -85,22 +85,23 @@ async function generatePostsSitemap(context) {
                 sitemap += `
         <image:image>
             <image:loc>${escapeXml(post.image)}</image:loc>
-            <image:title>${escapeXml(post.title)} Review</image:title>
+            <image:title>${escapeXml(post.title)}</image:title>
+            <image:caption>${escapeXml(post.title)} - Review and Analysis</image:caption>
         </image:image>`;
             }
             
-            // Add news data if post is recent
+            // Add news data if post is recent - CORRECTED DATE FORMAT
             const postDate = new Date(post.date || lastmod);
             const daysAgo = (new Date() - postDate) / (1000 * 60 * 60 * 24);
             
-            if (daysAgo < 3) { // Post is less than 3 days old
+            if (daysAgo < 3) {
                 sitemap += `
         <news:news>
             <news:publication>
                 <news:name>ReviewIndex</news:name>
                 <news:language>en</news:language>
             </news:publication>
-            <news:publication_date>${postDate.toISOString().split('T')[0]}</news:publication_date>
+            <news:publication_date>${formatNewsDate(postDate)}</news:publication_date>
             <news:title>${escapeXml(post.title)} Review</news:title>
         </news:news>`;
             }
@@ -114,7 +115,7 @@ async function generatePostsSitemap(context) {
         return new Response(sitemap, {
             headers: {
                 'Content-Type': 'application/xml',
-                'Cache-Control': 'public, max-age=86400' // 24 hours cache
+                'Cache-Control': 'public, max-age=86400'
             }
         });
 
@@ -127,22 +128,20 @@ async function generatePostsSitemap(context) {
 // Generate categories sitemap
 async function generateCategoriesSitemap(context) {
     const baseUrl = context.env.SITE_URL || 'https://reviewindex.pages.dev';
-    const currentDate = new Date().toISOString().split('T')[0];
+    const currentDate = new Date().toISOString();
     
-    // Extract categories from posts
     const posts = await fetchPostsFromGitHub(context);
     const categories = [...new Set(posts.map(post => post.category).filter(Boolean))];
     
     let sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`;
 
-    // Add category pages (you might want to create these pages later)
     categories.forEach(category => {
         const categoryUrl = `${baseUrl}/category/${encodeURIComponent(category.toLowerCase())}`;
         sitemap += `
     <url>
         <loc>${escapeXml(categoryUrl)}</loc>
-        <lastmod>${currentDate}</lastmod>
+        <lastmod>${formatSitemapDate(currentDate)}</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.6</priority>
     </url>`;
@@ -158,9 +157,29 @@ async function generateCategoriesSitemap(context) {
     });
 }
 
+// Format date for sitemap (full ISO 8601 format)
+function formatSitemapDate(dateString) {
+    try {
+        const date = new Date(dateString);
+        // Return full ISO format: YYYY-MM-DDTHH:mm:ss.sssZ
+        return date.toISOString();
+    } catch (error) {
+        // Fallback to current date if parsing fails
+        return new Date().toISOString();
+    }
+}
+
+// Format date for news sitemap (YYYY-MM-DD only)
+function formatNewsDate(date) {
+    try {
+        return date.toISOString().split('T')[0];
+    } catch (error) {
+        return new Date().toISOString().split('T')[0];
+    }
+}
+
 // Fetch posts from GitHub with enhanced metadata
 async function fetchPostsFromGitHub(context) {
-    // Updated with correct repository and path
     const response = await fetch('https://api.github.com/repos/yourfreetools/reviewindex/contents/content/reviews', {
         headers: {
             'Authorization': `token ${context.env.GITHUB_TOKEN}`,
@@ -182,11 +201,14 @@ async function fetchPostsFromGitHub(context) {
                 const postContent = await fetch(file.download_url).then(r => r.text());
                 const metadata = extractPostMetadata(postContent, file.name);
                 
+                // Use file last modified date from GitHub if available
+                const lastModified = file.git_url ? await getFileLastModified(context, file.git_url) : null;
+                
                 posts.push({
                     slug: file.name.replace('.md', ''),
                     title: metadata.title,
                     date: metadata.date,
-                    lastmod: metadata.lastmod || metadata.date,
+                    lastmod: lastModified || metadata.lastmod || metadata.date,
                     category: metadata.category,
                     image: metadata.image,
                     featured: metadata.featured || false,
@@ -194,28 +216,61 @@ async function fetchPostsFromGitHub(context) {
                 });
             } catch (error) {
                 console.warn(`Failed to process ${file.name}:`, error);
-                // Add basic post info even if metadata extraction fails
                 posts.push({
                     slug: file.name.replace('.md', ''),
                     title: escapeXml(file.name.replace('.md', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
-                    date: new Date().toISOString().split('T')[0],
-                    lastmod: new Date().toISOString().split('T')[0],
+                    date: new Date().toISOString(),
+                    lastmod: new Date().toISOString(),
                     category: 'General'
                 });
             }
         }
     }
 
-    // Sort by date (newest first)
     return posts.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
-// Extract metadata from markdown frontmatter and escape XML
+// Get file last modified date from GitHub commit history
+async function getFileLastModified(context, gitUrl) {
+    try {
+        const commitResponse = await fetch(gitUrl, {
+            headers: {
+                'Authorization': `token ${context.env.GITHUB_TOKEN}`,
+                'User-Agent': 'ReviewIndex-Sitemap',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        });
+        
+        if (commitResponse.ok) {
+            const fileData = await commitResponse.json();
+            // Get the last commit that modified this file
+            const commitsUrl = fileData._links.commits;
+            const commitsResponse = await fetch(commitsUrl, {
+                headers: {
+                    'Authorization': `token ${context.env.GITHUB_TOKEN}`,
+                    'User-Agent': 'ReviewIndex-Sitemap'
+                }
+            });
+            
+            if (commitsResponse.ok) {
+                const commits = await commitsResponse.json();
+                if (commits.length > 0) {
+                    return commits[0].commit.committer.date;
+                }
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to get last modified date:', error);
+    }
+    return null;
+}
+
+// Extract metadata from markdown frontmatter
 function extractPostMetadata(content, filename) {
     const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
     const metadata = {
         title: escapeXml(filename.replace('.md', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
-        date: new Date().toISOString().split('T')[0],
+        date: new Date().toISOString(),
         category: 'General'
     };
 
@@ -234,8 +289,12 @@ function extractPostMetadata(content, filename) {
                         metadata.title = escapeXml(value);
                         break;
                     case 'date':
-                        metadata.date = value;
-                        metadata.lastmod = value;
+                        // Ensure date is in proper format
+                        metadata.date = formatDateString(value);
+                        metadata.lastmod = formatDateString(value);
+                        break;
+                    case 'lastmod':
+                        metadata.lastmod = formatDateString(value);
                         break;
                     case 'category':
                         metadata.category = escapeXml(value);
@@ -257,6 +316,20 @@ function extractPostMetadata(content, filename) {
     return metadata;
 }
 
+// Ensure date strings are properly formatted
+function formatDateString(dateString) {
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) {
+            throw new Error('Invalid date');
+        }
+        return date.toISOString();
+    } catch (error) {
+        // If date parsing fails, use current date
+        return new Date().toISOString();
+    }
+}
+
 // XML escaping function
 function escapeXml(unsafe) {
     if (!unsafe) return '';
@@ -270,13 +343,13 @@ function escapeXml(unsafe) {
 
 function generateFallbackSitemap() {
     const baseUrl = 'https://reviewindex.pages.dev';
-    const currentDate = new Date().toISOString().split('T')[0];
+    const currentDate = new Date().toISOString();
     
     const fallbackSitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
         <loc>${escapeXml(baseUrl)}</loc>
-        <lastmod>${currentDate}</lastmod>
+        <lastmod>${formatSitemapDate(currentDate)}</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
     </url>
@@ -296,4 +369,4 @@ function generateErrorSitemap() {
         status: 500,
         headers: { 'Content-Type': 'application/xml' }
     });
-}
+                }
