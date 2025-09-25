@@ -1,19 +1,12 @@
 export async function onRequest(context) {
+    const { url } = await context.request.json();
+    const apiKey = context.env.INDEXNOW_API_KEY;
+    const endpoint = `https://api.indexnow.org/indexnow?url=${encodeURIComponent(url)}&key=${apiKey}`;
+
     try {
-        const body = await context.request.json();
-        const url = body.url;
-        const apiKey = context.env.INDEXNOW_API_KEY;
-        const indexNowEndpoint = `https://api.indexnow.org/indexnow?url=${encodeURIComponent(url)}&key=${apiKey}`;
-
-        const response = await fetch(indexNowEndpoint, { method: 'GET' });
-
-        if (response.ok) {
-            return new Response(JSON.stringify({ message: 'URL submitted successfully!' }), { status: 200 });
-        } else {
-            return new Response(JSON.stringify({ message: 'Failed to submit URL.' }), { status: 400 });
-        }
+        const res = await fetch(endpoint, { method: 'GET' });
+        return new Response(JSON.stringify({ message: res.ok ? 'Submitted successfully' : 'Failed to submit' }), { status: res.ok ? 200 : 400 });
     } catch (err) {
-        console.error(err);
         return new Response(JSON.stringify({ message: 'Server error' }), { status: 500 });
     }
 }
