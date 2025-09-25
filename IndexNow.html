@@ -2,111 +2,79 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>IndexNow Sitemap Submitter</title>
+<title>Latest Sitemap Links</title>
+<meta name="robots" content="noindex">
 <style>
 body { font-family: sans-serif; padding: 10px; }
 textarea { width: 100%; height: 200px; margin-bottom: 10px; }
-button { margin-top: 10px; padding: 10px; }
-#urls { margin-top: 10px; max-height: 300px; overflow-y: auto; }
-label { display: block; margin-bottom: 5px; }
+button { padding: 10px; margin-top: 5px; }
+#links { margin-top: 10px; max-height: 400px; overflow-y: auto; }
+label { display: block; margin-bottom: 5px; word-break: break-word; }
 </style>
 </head>
 <body>
-<h2>IndexNow Sitemap Submitter</h2>
+<h2>Latest Sitemap Links</h2>
 
-<p>Paste your sitemap XML here:</p>
-<textarea id="sitemapXml" placeholder="Paste sitemap XML here..."></textarea>
-<button id="loadSitemap">Load Sitemap</button>
-<button id="selectAll">Select All</button>
-<button id="deselectAll">Deselect All</button>
+<textarea id="sitemapXml" placeholder="Paste your sitemap XML here..."></textarea>
+<br>
+<button id="loadLinks">Show Latest 10 Links</button>
+<button id="copyLinks">Copy Selected Links</button>
 
-<div id="urls"></div>
-<button id="submitBtn">Submit Selected URLs</button>
-<pre id="result"></pre>
+<div id="links"></div>
 
 <script>
-const key = "fda744d3cbef4793b1af0b512bc481a0";
-const host = "reviewindex.pages.dev";
-const keyLocation = `https://${host}/fda744d3cbef4793b1af0b512bc481a0.txt`;
-
-let recentUrls = [];
-
-function parseSitemap(xmlText) {
-    const parser = new DOMParser();
-    const xml = parser.parseFromString(xmlText, "application/xml");
-    const ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
-    const urlElements = xml.getElementsByTagNameNS(ns, "url");
-
-    const urls = Array.from(urlElements).map(u => {
-        const locEl = u.getElementsByTagNameNS(ns, "loc")[0];
-        const lastmodEl = u.getElementsByTagNameNS(ns, "lastmod")[0];
-        let lastmod = lastmodEl ? lastmodEl.textContent.trim() : null;
-        if(lastmod) lastmod = lastmod.replace(/^"|"$/g, ""); // remove quotes
-        return { loc: locEl?.textContent, lastmod };
-    });
-
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    return urls.filter(u => u.lastmod && new Date(u.lastmod) >= yesterday);
-}
-
-function displayUrls(urls) {
-    const urlsDiv = document.getElementById('urls');
-    urlsDiv.innerHTML = "";
-    urls.forEach(u => {
-        const label = document.createElement('label');
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.value = u.loc;
-        checkbox.checked = true;
-        label.appendChild(checkbox);
-        label.appendChild(document.createTextNode(` ${u.loc}`));
-        urlsDiv.appendChild(label);
-    });
-    if(urls.length === 0) urlsDiv.innerHTML = "No URLs updated in the last 1 day.";
-}
-
-document.getElementById('loadSitemap').addEventListener('click', () => {
+document.getElementById('loadLinks').addEventListener('click', () => {
     const xmlText = document.getElementById('sitemapXml').value.trim();
     if(!xmlText) return alert("Please paste your sitemap XML.");
-    recentUrls = parseSitemap(xmlText);
-    displayUrls(recentUrls);
-});
-
-document.getElementById('selectAll').addEventListener('click', () => {
-    document.querySelectorAll('#urls input').forEach(i => i.checked = true);
-});
-document.getElementById('deselectAll').addEventListener('click', () => {
-    document.querySelectorAll('#urls input').forEach(i => i.checked = false);
-});
-
-document.getElementById('submitBtn').addEventListener('click', async () => {
-    const selectedUrls = Array.from(document.querySelectorAll('#urls input:checked')).map(i => i.value);
-    if(selectedUrls.length === 0) return alert("Select at least one URL.");
 
     try {
-        const payload = {
-            host,
-            key,
-            keyLocation,
-            urlList: selectedUrls
-        };
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(xmlText, "application/xml");
+        const ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
+        const urlElements = xml.getElementsByTagNameNS(ns, "url");
 
-        const response = await fetch("https://api.indexnow.org/IndexNow", {
-            method: "POST",
-            headers: { "Content-Type": "application/json; charset=utf-8" },
-            body: JSON.stringify(payload)
+        let urls = Array.from(urlElements).map(u => {
+            const locEl = u.getElementsByTagNameNS(ns, "loc")[0];
+            const lastmodEl = u.getElementsByTagNameNS(ns, "lastmod")[0];
+            let lastmod = lastmodEl ? lastmodEl.textContent.trim().replace(/^"|"$/g, "") : null;
+            return { loc: locEl?.textContent, lastmod };
         });
 
-        if(response.ok) {
-            document.getElementById('result').textContent = `✅ Successfully submitted ${selectedUrls.length} URL(s).`;
-        } else {
-            document.getElementById('result').textContent = `❌ Submission failed: ${response.statusText}`;
-        }
+        // Sort by lastmod descending and take latest 10
+        urls.sort((a, b) => new Date(b.lastmod) - new Date(a.lastmod));
+        urls = urls.slice(0, 10);
+
+        const linksDiv = document.getElementById('links');
+        linksDiv.innerHTML = "";
+
+        urls.forEach(u => {
+            const label = document.createElement('label');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = true;
+            checkbox.value = u.loc;
+            const a = document.createElement('a');
+            a.href = u.loc;
+            a.textContent = u.loc;
+            a.target = "_blank";
+            // No "nofollow" here — links remain crawlable
+            label.appendChild(checkbox);
+            label.appendChild(a);
+            linksDiv.appendChild(label);
+        });
+
     } catch (err) {
-        document.getElementById('result').textContent = `❌ Error: ${err}`;
+        alert("Failed to parse sitemap XML: " + err);
     }
+});
+
+// Copy button
+document.getElementById('copyLinks').addEventListener('click', () => {
+    const selected = Array.from(document.querySelectorAll('#links input:checked')).map(i => i.value);
+    if(selected.length === 0) return alert("Select at least one link to copy.");
+    navigator.clipboard.writeText(selected.join("\n"))
+        .then(() => alert("Selected links copied to clipboard!"))
+        .catch(err => alert("Copy failed: " + err));
 });
 </script>
 </body>
