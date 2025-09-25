@@ -28,6 +28,7 @@ export async function onRequest(context) {
         });
 
     } catch (error) {
+        console.error('Error rendering page:', error);
         return renderErrorPage('Server Error', 'An error occurred while loading the review.');
     }
 }
@@ -75,6 +76,9 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
     // Get social image with fallback
     const socialImage = frontmatter.image || 'https://reviewindex.pages.dev/default-social-image.jpg';
     
+    // Generate YouTube embed if YouTube ID exists
+    const youtubeEmbed = frontmatter.youtubeId ? generateYouTubeEmbed(frontmatter.youtubeId, frontmatter.title || formatSlug(slug)) : '';
+
     return `
 <!DOCTYPE html>
 <html lang="en">
@@ -114,20 +118,28 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
             line-height: 1.6; 
             color: #333;
             background: #f5f5f5;
+            padding: 20px;
         }
         .container { 
             max-width: 800px; 
             margin: 0 auto; 
-            padding: 20px; 
+            padding: 40px; 
             background: white;
             min-height: 100vh;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            box-shadow: 0 0 30px rgba(0,0,0,0.1);
+            border-radius: 12px;
         }
         .header { 
             text-align: center; 
             padding: 2rem 0; 
-            border-bottom: 1px solid #eee;
+            border-bottom: 2px solid #f0f0f0;
             margin-bottom: 2rem;
+        }
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            color: #1a202c;
+            line-height: 1.2;
         }
         .rating { 
             color: #f59e0b; 
@@ -137,65 +149,197 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
         .content { 
             font-size: 1.1rem; 
             line-height: 1.8;
+            color: #2d3748;
         }
         .content img { 
             max-width: 100%; 
             height: auto; 
-            margin: 1rem 0;
-            border-radius: 8px;
+            margin: 2rem 0;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
         .back-link { 
             display: inline-block; 
-            margin-top: 2rem; 
+            margin-top: 3rem; 
             color: #2563eb; 
             text-decoration: none;
+            font-weight: 600;
+            padding: 0.5rem 1rem;
+            border: 2px solid #2563eb;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        .back-link:hover {
+            background: #2563eb;
+            color: white;
         }
         .meta-info {
-            background: #f8fafc;
-            padding: 1rem;
-            border-radius: 8px;
-            margin: 1rem 0;
-            font-size: 0.9rem;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin: 2rem 0;
+            font-size: 0.95rem;
+            color: #4a5568;
+            border-left: 4px solid #2563eb;
+        }
+        
+        /* YouTube Embed Styles */
+        .youtube-embed {
+            margin: 3rem 0;
+            text-align: center;
+            background: #fef7ed;
+            padding: 2rem;
+            border-radius: 12px;
+            border: 2px solid #fed7aa;
+        }
+        .youtube-embed h3 {
+            margin-bottom: 1.5rem;
+            color: #1a202c;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            height: 0;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            margin: 1.5rem 0;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        .video-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .video-caption {
+            margin-top: 1rem;
             color: #666;
+            font-size: 0.9rem;
         }
         
         /* SEO-friendly heading hierarchy */
         .content h2 {
-            margin: 2rem 0 1rem 0;
+            margin: 3rem 0 1.5rem 0;
             color: #1a202c;
-            border-bottom: 2px solid #e2e8f0;
-            padding-bottom: 0.5rem;
+            border-bottom: 3px solid #e2e8f0;
+            padding-bottom: 0.75rem;
+            font-size: 1.8rem;
         }
         
         .content h3 {
-            margin: 1.5rem 0 0.75rem 0;
+            margin: 2rem 0 1rem 0;
             color: #2d3748;
+            font-size: 1.4rem;
         }
         
         .content h4 {
-            margin: 1rem 0 0.5rem 0;
+            margin: 1.5rem 0 0.75rem 0;
             color: #4a5568;
+            font-size: 1.2rem;
         }
         
         .content p {
-            margin-bottom: 1rem;
+            margin-bottom: 1.5rem;
+            font-size: 1.1rem;
+            line-height: 1.7;
         }
         
         .content ul, .content ol {
-            margin: 1rem 0;
-            padding-left: 2rem;
+            margin: 1.5rem 0;
+            padding-left: 2.5rem;
         }
         
         .content li {
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.75rem;
+            line-height: 1.6;
         }
         
         .content strong {
             font-weight: 600;
+            color: #1a202c;
         }
         
         .content em {
             font-style: italic;
+            color: #4a5568;
+        }
+        
+        .content blockquote {
+            border-left: 4px solid #2563eb;
+            padding-left: 1.5rem;
+            margin: 2rem 0;
+            color: #4a5568;
+            font-style: italic;
+            background: #f8fafc;
+            padding: 1.5rem;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .content code {
+            background: #f1f5f9;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .content pre {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 1.5rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 2rem 0;
+        }
+        
+        .content pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            .container {
+                padding: 20px;
+            }
+            .header h1 {
+                font-size: 2rem;
+            }
+            .content {
+                font-size: 1rem;
+            }
+            .youtube-embed {
+                margin: 2rem 0;
+                padding: 1.5rem;
+            }
+        }
+        
+        /* Animation for better UX */
+        .container {
+            animation: fadeInUp 0.6s ease-out;
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
     </style>
 </head>
@@ -204,7 +348,7 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
         <header class="header" role="banner">
             <h1>${escapeHtml(frontmatter.title || formatSlug(slug))}</h1>
             ${frontmatter.rating ? `<div class="rating" aria-label="Rating: ${frontmatter.rating} out of 5 stars">${'⭐'.repeat(parseInt(frontmatter.rating))} ${frontmatter.rating}/5</div>` : ''}
-            ${frontmatter.description ? `<p>${escapeHtml(frontmatter.description)}</p>` : ''}
+            ${frontmatter.description ? `<p style="font-size: 1.2rem; color: #4a5568;">${escapeHtml(frontmatter.description)}</p>` : ''}
         </header>
         
         <div class="meta-info">
@@ -213,24 +357,53 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
             <strong>Review by:</strong> ReviewIndex Team
         </div>
         
+        <!-- YouTube Video Embed - Placed strategically after header but before main content -->
+        ${youtubeEmbed}
+        
         <main class="content" role="main">
             ${htmlContent}
         </main>
         
         ${frontmatter.affiliateLink ? `
-        <aside style="background: #fff7ed; padding: 1.5rem; border-radius: 8px; margin: 2rem 0; text-align: center;" aria-label="Where to buy">
-            <h2>Where to Buy</h2>
-            <a href="${frontmatter.affiliateLink}" target="_blank" rel="nofollow sponsored" style="background: #2563eb; color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 6px; display: inline-block; margin: 1rem 0;">
+        <aside style="background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%); padding: 2rem; border-radius: 12px; margin: 3rem 0; text-align: center; border: 2px solid #fdba74;" aria-label="Where to buy">
+            <h2 style="color: #1a202c; margin-bottom: 1rem;">Where to Buy</h2>
+            <a href="${frontmatter.affiliateLink}" target="_blank" rel="nofollow sponsored" style="background: #2563eb; color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 8px; display: inline-block; margin: 1rem 0; font-weight: 600; transition: all 0.3s ease;">
                 Check Current Price on Amazon
             </a>
-            <p><small>Note: This is an affiliate link. We may earn a commission at no extra cost to you.</small></p>
+            <p style="margin-top: 1rem; color: #666; font-size: 0.9rem;"><small>Note: This is an affiliate link. We may earn a commission at no extra cost to you.</small></p>
         </aside>
         ` : ''}
         
-        <nav aria-label="Breadcrumb navigation">
+        <nav aria-label="Breadcrumb navigation" style="text-align: center;">
             <a href="/" class="back-link">← Back to All Reviews</a>
         </nav>
     </div>
+    
+    <script>
+        // Lazy loading for images and better performance
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add smooth scrolling for anchor links
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const target = document.querySelector(this.getAttribute('href'));
+                    if (target) {
+                        target.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start'
+                        });
+                    }
+                });
+            });
+            
+            // Add loading state for external links
+            document.querySelectorAll('a[target="_blank"]').forEach(link => {
+                link.addEventListener('click', function() {
+                    this.style.opacity = '0.7';
+                });
+            });
+        });
+    </script>
 </body>
 </html>`;
 }
@@ -283,11 +456,18 @@ function convertMarkdownToHTML(markdown) {
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
         
+        // Handle code blocks
+        .replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        
+        // Handle blockquotes
+        .replace(/^> (.*)$/gm, '<blockquote>$1</blockquote>')
+        
         // Handle images
         .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" loading="lazy">')
         
         // Handle links
-        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" rel="noopener">$1</a>');
+        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
     // Step 2: Process line by line to handle lists and paragraphs properly
     const lines = html.split('\n');
@@ -324,7 +504,9 @@ function convertMarkdownToHTML(markdown) {
             }
             
             // Handle regular content
-            if (line.startsWith('<h') || line.startsWith('<img') || line.startsWith('<a')) {
+            if (line.startsWith('<h') || line.startsWith('<img') || line.startsWith('<a') || 
+                line.startsWith('<blockquote') || line.startsWith('<pre') || line.startsWith('<ul') || 
+                line.startsWith('<ol')) {
                 // Already HTML tags, leave as is
                 processedLines.push(line);
             } else {
@@ -346,9 +528,39 @@ function convertMarkdownToHTML(markdown) {
         .replace(/<p><\/p>/g, '')
         .replace(/(<\/h[2-4]>)\s*<p>/g, '$1')
         .replace(/<\/p>\s*(<h[2-4]>)/g, '$1')
-        .replace(/<p>(<ul>.*?<\/ul>)<\/p>/g, '$1');
+        .replace(/<p>(<ul>.*?<\/ul>)<\/p>/g, '$1')
+        .replace(/<p>(<blockquote>.*?<\/blockquote>)<\/p>/g, '$1')
+        .replace(/<p>(<pre>.*?<\/pre>)<\/p>/gs, '$1');
 
     return html;
+}
+
+function generateYouTubeEmbed(youtubeUrl, title) {
+    // Extract YouTube video ID from various URL formats
+    function getYouTubeId(url) {
+        const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[7].length === 11) ? match[7] : null;
+    }
+    
+    const videoId = getYouTubeId(youtubeUrl);
+    
+    if (!videoId) return '';
+    
+    return `
+    <section class="youtube-embed" aria-labelledby="video-title">
+        <h3 id="video-title">📺 Video Review</h3>
+        <div class="video-wrapper">
+            <iframe 
+                src="https://www.youtube.com/embed/${videoId}" 
+                title="Video review of ${escapeHtml(title)}"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                allowfullscreen
+                loading="lazy">
+            </iframe>
+        </div>
+        <p class="video-caption">Watch our detailed video review for a comprehensive overview</p>
+    </section>`;
 }
 
 function generateSchemaMarkup(frontmatter, slug, url) {
@@ -413,17 +625,55 @@ function renderErrorPage(title, message) {
     <title>${title} - ReviewIndex</title>
     <meta name="robots" content="noindex">
     <style>
-        body { font-family: system-ui; text-align: center; padding: 4rem; background: #f5f5f5; }
-        .error-container { background: white; padding: 3rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { color: #dc2626; margin-bottom: 1rem; }
-        a { color: #2563eb; text-decoration: none; }
+        body { 
+            font-family: system-ui, sans-serif; 
+            text-align: center; 
+            padding: 2rem; 
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .error-container { 
+            background: white; 
+            padding: 3rem; 
+            border-radius: 12px; 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 { 
+            color: #dc2626; 
+            margin-bottom: 1rem;
+            font-size: 2rem;
+        }
+        p {
+            color: #666;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+        a { 
+            color: #2563eb; 
+            text-decoration: none;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border: 2px solid #2563eb;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        a:hover {
+            background: #2563eb;
+            color: white;
+        }
     </style>
 </head>
 <body>
     <div class="error-container">
         <h1>⚠️ ${title}</h1>
         <p>${message}</p>
-        <p><a href="/">← Return to Homepage</a></p>
+        <a href="/">← Return to Homepage</a>
     </div>
 </body>
 </html>`;
@@ -432,4 +682,4 @@ function renderErrorPage(title, message) {
         status: 404,
         headers: { 'Content-Type': 'text/html' }
     });
-}
+                }
