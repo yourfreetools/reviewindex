@@ -6,8 +6,6 @@ export async function onRequestGet(context) {
         switch (sitemapType) {
             case 'posts':
                 return await generatePostsSitemap(context);
-            case 'categories':
-                return await generateCategoriesSitemap(context);
             default:
                 return await generateMainSitemap(context);
         }
@@ -20,24 +18,20 @@ export async function onRequestGet(context) {
 // Generate main sitemap index
 async function generateMainSitemap(context) {
     const baseUrl = context.env.SITE_URL || 'https://reviewindex.pages.dev';
-    const currentDate = new Date().toISOString(); // Full ISO format
+    const currentDate = new Date().toISOString();
     
     const sitemapIndex = `<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <sitemap>
         <loc>${baseUrl}/sitemap.xml?type=posts</loc>
-        <lastmod>${formatSitemapDate(currentDate)}</lastmod>
-    </sitemap>
-    <sitemap>
-        <loc>${baseUrl}/sitemap.xml?type=categories</loc>
-        <lastmod>${formatSitemapDate(currentDate)}</lastmod>
+        <lastmod>${currentDate.split('T')[0]}</lastmod>
     </sitemap>
 </sitemapindex>`;
 
     return new Response(sitemapIndex, {
         headers: {
             'Content-Type': 'application/xml',
-            'Cache-Control': 'public, max-age=3600'
+            'Cache-Control': 'public, max-age=86400'
         }
     });
 }
@@ -46,23 +40,16 @@ async function generateMainSitemap(context) {
 async function generatePostsSitemap(context) {
     try {
         const baseUrl = context.env.SITE_URL || 'https://reviewindex.pages.dev';
-        const currentDate = new Date().toISOString();
+        const currentDate = new Date().toISOString().split('T')[0];
         
         // Fetch posts from GitHub
         const posts = await fetchPostsFromGitHub(context);
         
         let sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:news="http://www.google.com/schemas/sitemap-news/0.9"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml"
-        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
-        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">`;
-
-        // Add homepage
-        sitemap += `
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
         <loc>${escapeXml(baseUrl)}</loc>
-        <lastmod>${formatSitemapDate(currentDate)}</lastmod>
+        <lastmod>${currentDate}</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
     </url>`;
@@ -71,42 +58,13 @@ async function generatePostsSitemap(context) {
         for (const post of posts) {
             const postUrl = `${baseUrl}/review/${post.slug}`;
             const lastmod = post.lastmod || post.date || currentDate;
-            const priority = post.featured ? '0.9' : '0.7';
             
             sitemap += `
     <url>
         <loc>${escapeXml(postUrl)}</loc>
-        <lastmod>${formatSitemapDate(lastmod)}</lastmod>
-        <changefreq>weekly</changefreq>
-        <priority>${priority}</priority>`;
-            
-            // Add image if exists
-            if (post.image) {
-                sitemap += `
-        <image:image>
-            <image:loc>${escapeXml(post.image)}</image:loc>
-            <image:title>${escapeXml(post.title)}</image:title>
-            <image:caption>${escapeXml(post.title)} - Review and Analysis</image:caption>
-        </image:image>`;
-            }
-            
-            // Add news data if post is recent - CORRECTED DATE FORMAT
-            const postDate = new Date(post.date || lastmod);
-            const daysAgo = (new Date() - postDate) / (1000 * 60 * 60 * 24);
-            
-            if (daysAgo < 3) {
-                sitemap += `
-        <news:news>
-            <news:publication>
-                <news:name>ReviewIndex</news:name>
-                <news:language>en</news:language>
-            </news:publication>
-            <news:publication_date>${formatNewsDate(postDate)}</news:publication_date>
-            <news:title>${escapeXml(post.title)} Review</news:title>
-        </news:news>`;
-            }
-            
-            sitemap += `
+        <lastmod>${lastmod.split('T')[0]}</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
     </url>`;
         }
 
@@ -125,62 +83,10 @@ async function generatePostsSitemap(context) {
     }
 }
 
-// Generate categories sitemap
-async function generateCategoriesSitemap(context) {
-    const baseUrl = context.env.SITE_URL || 'https://reviewindex.pages.dev';
-    const currentDate = new Date().toISOString();
-    
-    const posts = await fetchPostsFromGitHub(context);
-    const categories = [...new Set(posts.map(post => post.category).filter(Boolean))];
-    
-    let sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`;
-
-    categories.forEach(category => {
-        const categoryUrl = `${baseUrl}/category/${encodeURIComponent(category.toLowerCase())}`;
-        sitemap += `
-    <url>
-        <loc>${escapeXml(categoryUrl)}</loc>
-        <lastmod>${formatSitemapDate(currentDate)}</lastmod>
-        <changefreq>weekly</changefreq>
-        <priority>0.6</priority>
-    </url>`;
-    });
-
-    sitemap += '\n</urlset>';
-
-    return new Response(sitemap, {
-        headers: {
-            'Content-Type': 'application/xml',
-            'Cache-Control': 'public, max-age=86400'
-        }
-    });
-}
-
-// Format date for sitemap (full ISO 8601 format)
-function formatSitemapDate(dateString) {
-    try {
-        const date = new Date(dateString);
-        // Return full ISO format: YYYY-MM-DDTHH:mm:ss.sssZ
-        return date.toISOString();
-    } catch (error) {
-        // Fallback to current date if parsing fails
-        return new Date().toISOString();
-    }
-}
-
-// Format date for news sitemap (YYYY-MM-DD only)
-function formatNewsDate(date) {
-    try {
-        return date.toISOString().split('T')[0];
-    } catch (error) {
-        return new Date().toISOString().split('T')[0];
-    }
-}
-
-// Fetch posts from GitHub with enhanced metadata
+// Fetch posts from GitHub - UPDATED PATH
 async function fetchPostsFromGitHub(context) {
-    const response = await fetch('https://api.github.com/repos/yourfreetools/reviewindex/contents/content/reviews', {
+    // Updated to point to content/reviews/fi.md files
+    const response = await fetch('https://api.github.com/repos/yourfreetools/reviewindex/contents/content/reviews/fi.md', {
         headers: {
             'Authorization': `token ${context.env.GITHUB_TOKEN}`,
             'User-Agent': 'ReviewIndex-Sitemap',
@@ -189,51 +95,8 @@ async function fetchPostsFromGitHub(context) {
     });
 
     if (!response.ok) {
-        throw new Error(`GitHub API error: ${response.status}`);
-    }
-
-    const files = await response.json();
-    const posts = [];
-
-    for (const file of files) {
-        if (file.name.endsWith('.md')) {
-            try {
-                const postContent = await fetch(file.download_url).then(r => r.text());
-                const metadata = extractPostMetadata(postContent, file.name);
-                
-                // Use file last modified date from GitHub if available
-                const lastModified = file.git_url ? await getFileLastModified(context, file.git_url) : null;
-                
-                posts.push({
-                    slug: file.name.replace('.md', ''),
-                    title: metadata.title,
-                    date: metadata.date,
-                    lastmod: lastModified || metadata.lastmod || metadata.date,
-                    category: metadata.category,
-                    image: metadata.image,
-                    featured: metadata.featured || false,
-                    excerpt: metadata.excerpt
-                });
-            } catch (error) {
-                console.warn(`Failed to process ${file.name}:`, error);
-                posts.push({
-                    slug: file.name.replace('.md', ''),
-                    title: escapeXml(file.name.replace('.md', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
-                    date: new Date().toISOString(),
-                    lastmod: new Date().toISOString(),
-                    category: 'General'
-                });
-            }
-        }
-    }
-
-    return posts.sort((a, b) => new Date(b.date) - new Date(a.date));
-}
-
-// Get file last modified date from GitHub commit history
-async function getFileLastModified(context, gitUrl) {
-    try {
-        const commitResponse = await fetch(gitUrl, {
+        // If the specific path doesn't work, try the directory
+        const dirResponse = await fetch('https://api.github.com/repos/yourfreetools/reviewindex/contents/content/reviews', {
             headers: {
                 'Authorization': `token ${context.env.GITHUB_TOKEN}`,
                 'User-Agent': 'ReviewIndex-Sitemap',
@@ -241,37 +104,68 @@ async function getFileLastModified(context, gitUrl) {
             }
         });
         
-        if (commitResponse.ok) {
-            const fileData = await commitResponse.json();
-            // Get the last commit that modified this file
-            const commitsUrl = fileData._links.commits;
-            const commitsResponse = await fetch(commitsUrl, {
-                headers: {
-                    'Authorization': `token ${context.env.GITHUB_TOKEN}`,
-                    'User-Agent': 'ReviewIndex-Sitemap'
-                }
-            });
-            
-            if (commitsResponse.ok) {
-                const commits = await commitsResponse.json();
-                if (commits.length > 0) {
-                    return commits[0].commit.committer.date;
-                }
-            }
+        if (!dirResponse.ok) {
+            throw new Error(`GitHub API error: ${response.status} and ${dirResponse.status}`);
         }
-    } catch (error) {
-        console.warn('Failed to get last modified date:', error);
+        
+        const files = await dirResponse.json();
+        return processFiles(files);
     }
-    return null;
+
+    // If it's a single file, handle it differently
+    const fileData = await response.json();
+    return processFiles([fileData]);
 }
 
-// Extract metadata from markdown frontmatter
+// Process files array
+async function processFiles(files) {
+    const posts = [];
+
+    for (const file of files) {
+        if (file.name.endsWith('.md') && file.type === 'file') {
+            try {
+                const postContent = await fetch(file.download_url).then(r => r.text());
+                const metadata = extractPostMetadata(postContent, file.name);
+                
+                posts.push({
+                    slug: file.name.replace('.md', ''),
+                    title: metadata.title,
+                    date: metadata.date,
+                    lastmod: metadata.lastmod || metadata.date
+                });
+            } catch (error) {
+                console.warn(`Failed to process ${file.name}:`, error);
+                // Basic fallback
+                posts.push({
+                    slug: file.name.replace('.md', ''),
+                    date: new Date().toISOString().split('T')[0],
+                    lastmod: new Date().toISOString().split('T')[0]
+                });
+            }
+        } else if (file.type === 'dir') {
+            // If it's a directory, fetch its contents
+            try {
+                const dirResponse = await fetch(file.url);
+                if (dirResponse.ok) {
+                    const dirFiles = await dirResponse.json();
+                    const dirPosts = await processFiles(dirFiles);
+                    posts.push(...dirPosts);
+                }
+            } catch (error) {
+                console.warn(`Failed to process directory ${file.name}:`, error);
+            }
+        }
+    }
+
+    return posts.sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+// Extract basic metadata from markdown
 function extractPostMetadata(content, filename) {
     const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
     const metadata = {
-        title: escapeXml(filename.replace('.md', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
-        date: new Date().toISOString(),
-        category: 'General'
+        title: filename.replace('.md', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        date: new Date().toISOString().split('T')[0]
     };
 
     if (frontmatterMatch) {
@@ -284,50 +178,19 @@ function extractPostMetadata(content, filename) {
                 const key = match[1].toLowerCase();
                 const value = match[2].trim();
                 
-                switch (key) {
-                    case 'title':
-                        metadata.title = escapeXml(value);
-                        break;
-                    case 'date':
-                        // Ensure date is in proper format
-                        metadata.date = formatDateString(value);
-                        metadata.lastmod = formatDateString(value);
-                        break;
-                    case 'lastmod':
-                        metadata.lastmod = formatDateString(value);
-                        break;
-                    case 'category':
-                        metadata.category = escapeXml(value);
-                        break;
-                    case 'image':
-                        metadata.image = escapeXml(value);
-                        break;
-                    case 'featured':
-                        metadata.featured = value.toLowerCase() === 'true';
-                        break;
-                    case 'excerpt':
-                        metadata.excerpt = escapeXml(value);
-                        break;
+                if (key === 'date') {
+                    metadata.date = value;
+                    metadata.lastmod = value;
+                } else if (key === 'lastmod') {
+                    metadata.lastmod = value;
+                } else if (key === 'title') {
+                    metadata.title = value;
                 }
             }
         }
     }
 
     return metadata;
-}
-
-// Ensure date strings are properly formatted
-function formatDateString(dateString) {
-    try {
-        const date = new Date(dateString);
-        if (isNaN(date.getTime())) {
-            throw new Error('Invalid date');
-        }
-        return date.toISOString();
-    } catch (error) {
-        // If date parsing fails, use current date
-        return new Date().toISOString();
-    }
 }
 
 // XML escaping function
@@ -341,15 +204,16 @@ function escapeXml(unsafe) {
         .replace(/'/g, '&apos;');
 }
 
+// Fallback sitemap with just homepage
 function generateFallbackSitemap() {
     const baseUrl = 'https://reviewindex.pages.dev';
-    const currentDate = new Date().toISOString();
+    const currentDate = new Date().toISOString().split('T')[0];
     
     const fallbackSitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
         <loc>${escapeXml(baseUrl)}</loc>
-        <lastmod>${formatSitemapDate(currentDate)}</lastmod>
+        <lastmod>${currentDate}</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
     </url>
@@ -360,13 +224,13 @@ function generateFallbackSitemap() {
     });
 }
 
+// Error response
 function generateErrorSitemap() {
     return new Response(`<?xml version="1.0" encoding="UTF-8"?>
 <error>
     <message>Unable to generate sitemap at this time. Please try again later.</message>
-    <timestamp>${new Date().toISOString()}</timestamp>
 </error>`, {
         status: 500,
         headers: { 'Content-Type': 'application/xml' }
     });
-                }
+                                          }
