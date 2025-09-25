@@ -1,3 +1,42 @@
+// Date cleaning function
+function cleanDate(dateString) {
+    if (!dateString) return new Date().toISOString().split('T')[0];
+    
+    // Remove any quotation marks or invalid characters
+    const cleaned = dateString.toString().replace(/["']/g, '').split('T')[0];
+    
+    // Validate date format (YYYY-MM-DD)
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(cleaned)) {
+        return new Date().toISOString().split('T')[0];
+    }
+    
+    // Ensure date is not in the future
+    const today = new Date().toISOString().split('T')[0];
+    return cleaned > today ? today : cleaned;
+}
+
+// Slug validation function
+function generateValidSlug(rawSlug) {
+    if (!rawSlug) return 'untitled';
+    return rawSlug
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+}
+
+// XML escaping function
+function escapeXml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe.toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
+
 export async function onRequestGet(context) {
     try {
         const url = new URL(context.request.url);
@@ -24,7 +63,7 @@ async function generateMainSitemap(context) {
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <sitemap>
         <loc>${baseUrl}/sitemap.xml?type=posts</loc>
-        <lastmod>${currentDate.split('T')[0]}</lastmod>
+        <lastmod>${cleanDate(currentDate)}</lastmod>
     </sitemap>
 </sitemapindex>`;
 
@@ -49,20 +88,20 @@ async function generatePostsSitemap(context) {
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
         <loc>${escapeXml(baseUrl)}</loc>
-        <lastmod>${currentDate}</lastmod>
+        <lastmod>${cleanDate(currentDate)}</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
     </url>`;
 
         // Add each post
         for (const post of posts) {
-            const postUrl = `${baseUrl}/review/${post.slug}`;
+            const postUrl = `${baseUrl}/review/${generateValidSlug(post.slug)}`;
             const lastmod = post.lastmod || post.date || currentDate;
             
             sitemap += `
     <url>
         <loc>${escapeXml(postUrl)}</loc>
-        <lastmod>${lastmod.split('T')[0]}</lastmod>
+        <lastmod>${cleanDate(lastmod)}</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
     </url>`;
@@ -79,14 +118,14 @@ async function generatePostsSitemap(context) {
 
     } catch (error) {
         console.error('Posts sitemap error:', error);
-        return generateFallbackSitemap(context);
+        return generateFallbackSitemap();
     }
 }
 
-// Fetch posts from GitHub - UPDATED PATH
+// Fetch posts from GitHub - CORRECTED PATH
 async function fetchPostsFromGitHub(context) {
-    // Updated to point to content/reviews/fi.md files
-    const response = await fetch('https://api.github.com/repos/yourfreetools/reviewindex/contents/content/reviews/fi.md', {
+    // Directly fetch from the reviews directory
+    const response = await fetch('https://api.github.com/repos/yourfreetools/reviewindex/contents/content/reviews', {
         headers: {
             'Authorization': `token ${context.env.GITHUB_TOKEN}`,
             'User-Agent': 'ReviewIndex-Sitemap',
@@ -95,26 +134,11 @@ async function fetchPostsFromGitHub(context) {
     });
 
     if (!response.ok) {
-        // If the specific path doesn't work, try the directory
-        const dirResponse = await fetch('https://api.github.com/repos/yourfreetools/reviewindex/contents/content/reviews', {
-            headers: {
-                'Authorization': `token ${context.env.GITHUB_TOKEN}`,
-                'User-Agent': 'ReviewIndex-Sitemap',
-                'Accept': 'application/vnd.github.v3+json'
-            }
-        });
-        
-        if (!dirResponse.ok) {
-            throw new Error(`GitHub API error: ${response.status} and ${dirResponse.status}`);
-        }
-        
-        const files = await dirResponse.json();
-        return processFiles(files);
+        throw new Error(`GitHub API error: ${response.status}`);
     }
 
-    // If it's a single file, handle it differently
-    const fileData = await response.json();
-    return processFiles([fileData]);
+    const files = await response.json();
+    return processFiles(files);
 }
 
 // Process files array
@@ -128,24 +152,30 @@ async function processFiles(files) {
                 const metadata = extractPostMetadata(postContent, file.name);
                 
                 posts.push({
-                    slug: file.name.replace('.md', ''),
+                    slug: generateValidSlug(file.name.replace('.md', '')),
                     title: metadata.title,
-                    date: metadata.date,
-                    lastmod: metadata.lastmod || metadata.date
+                    date: cleanDate(metadata.date),
+                    lastmod: cleanDate(metadata.lastmod || metadata.date)
                 });
             } catch (error) {
                 console.warn(`Failed to process ${file.name}:`, error);
-                // Basic fallback
+                // Basic fallback with cleaned data
                 posts.push({
-                    slug: file.name.replace('.md', ''),
-                    date: new Date().toISOString().split('T')[0],
-                    lastmod: new Date().toISOString().split('T')[0]
+                    slug: generateValidSlug(file.name.replace('.md', '')),
+                    date: cleanDate(new Date().toISOString()),
+                    lastmod: cleanDate(new Date().toISOString())
                 });
             }
         } else if (file.type === 'dir') {
             // If it's a directory, fetch its contents
             try {
-                const dirResponse = await fetch(file.url);
+                const dirResponse = await fetch(file.url, {
+                    headers: {
+                        'Authorization': `token ${process.env.GITHUB_TOKEN}`,
+                        'User-Agent': 'ReviewIndex-Sitemap',
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
                 if (dirResponse.ok) {
                     const dirFiles = await dirResponse.json();
                     const dirPosts = await processFiles(dirFiles);
@@ -185,23 +215,14 @@ function extractPostMetadata(content, filename) {
                     metadata.lastmod = value;
                 } else if (key === 'title') {
                     metadata.title = value;
+                } else if (key === 'slug') {
+                    metadata.slug = generateValidSlug(value);
                 }
             }
         }
     }
 
     return metadata;
-}
-
-// XML escaping function
-function escapeXml(unsafe) {
-    if (!unsafe) return '';
-    return unsafe.toString()
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
 }
 
 // Fallback sitemap with just homepage
@@ -213,7 +234,7 @@ function generateFallbackSitemap() {
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
         <loc>${escapeXml(baseUrl)}</loc>
-        <lastmod>${currentDate}</lastmod>
+        <lastmod>${cleanDate(currentDate)}</lastmod>
         <changefreq>daily</changefreq>
         <priority>1.0</priority>
     </url>
@@ -233,4 +254,4 @@ function generateErrorSitemap() {
         status: 500,
         headers: { 'Content-Type': 'application/xml' }
     });
-                                          }
+            }
