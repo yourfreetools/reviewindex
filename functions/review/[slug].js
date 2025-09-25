@@ -72,6 +72,9 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
     // Generate schema markup
     const schemaMarkup = generateSchemaMarkup(frontmatter, slug, canonicalUrl);
     
+    // Get social image with fallback
+    const socialImage = frontmatter.image || 'https://reviewindex.pages.dev/default-social-image.jpg';
+    
     return `
 <!DOCTYPE html>
 <html lang="en">
@@ -87,14 +90,17 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
     <meta property="og:description" content="${escapeHtml(frontmatter.description || 'Comprehensive product review and analysis')}">
     <meta property="og:type" content="article">
     <meta property="og:url" content="${canonicalUrl}">
-    ${frontmatter.image ? `<meta property="og:image" content="${escapeHtml(frontmatter.image)}">` : ''}
+    <meta property="og:image" content="${escapeHtml(socialImage)}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
     <meta property="og:site_name" content="ReviewIndex">
     
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${escapeHtml(frontmatter.title || formatSlug(slug))}">
     <meta name="twitter:description" content="${escapeHtml(frontmatter.description || 'Comprehensive product review and analysis')}">
-    ${frontmatter.image ? `<meta name="twitter:image" content="${escapeHtml(frontmatter.image)}">` : ''}
+    <meta name="twitter:image" content="${escapeHtml(socialImage)}">
+    <meta name="twitter:image:alt" content="${escapeHtml(frontmatter.title || formatSlug(slug))} product review">
     
     <!-- Schema.org JSON-LD -->
     <script type="application/ld+json">
@@ -166,6 +172,11 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
             color: #2d3748;
         }
         
+        .content h4 {
+            margin: 1rem 0 0.5rem 0;
+            color: #4a5568;
+        }
+        
         .content p {
             margin-bottom: 1rem;
         }
@@ -177,6 +188,14 @@ async function renderPostPage(markdownContent, slug, requestUrl) {
         
         .content li {
             margin-bottom: 0.5rem;
+        }
+        
+        .content strong {
+            font-weight: 600;
+        }
+        
+        .content em {
+            font-style: italic;
         }
     </style>
 </head>
@@ -238,6 +257,9 @@ function parseMarkdown(content) {
                         value = value.substring(1, value.length - 1);
                     } else if (value.startsWith("'") && value.endsWith("'")) {
                         value = value.substring(1, value.length - 1);
+                    } else if (value.startsWith('[') && value.endsWith(']')) {
+                        // Handle array values like categories
+                        value = value.substring(1, value.length - 1).split(',').map(item => item.trim().replace(/"/g, ''));
                     }
                     
                     frontmatter[key] = value;
@@ -250,48 +272,99 @@ function parseMarkdown(content) {
 }
 
 function convertMarkdownToHTML(markdown) {
-    // Enhanced markdown to HTML conversion with proper heading hierarchy
+    // Step 1: Convert markdown to basic HTML
     let html = markdown
-        // Convert headings with proper hierarchy (H1 is already used for title)
-        .replace(/^# (.*)$/gm, '<h2>$1</h2>')  // # → H2
-        .replace(/^## (.*)$/gm, '<h3>$1</h3>') // ## → H3  
-        .replace(/^### (.*)$/gm, '<h4>$1</h4>') // ### → H4
+        // Convert headings first (H1 is used for title, so start with H2)
+        .replace(/^# (.*)$/gm, '<h2>$1</h2>')
+        .replace(/^## (.*)$/gm, '<h3>$1</h3>')
+        .replace(/^### (.*)$/gm, '<h4>$1</h4>')
         
         // Handle bold and italic
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
         
-        // Handle images with proper alt text
+        // Handle images
         .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" loading="lazy">')
         
         // Handle links
-        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" rel="noopener">$1</a>')
+        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" rel="noopener">$1</a>');
+
+    // Step 2: Process line by line to handle lists and paragraphs properly
+    const lines = html.split('\n');
+    let inList = false;
+    let listItems = [];
+    let processedLines = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
         
-        // Handle paragraphs (convert double newlines to paragraphs)
-        .replace(/\n\n+/g, '</p><p>')
-        .replace(/(<h[2-4]>.*?<\/h[2-4]>)/g, '</p>$1<p>');
-    
-    // Wrap content in paragraphs and clean up empty paragraphs
-    html = '<p>' + html + '</p>';
-    html = html.replace(/<p><\/p>/g, '');
-    html = html.replace(/<p>(<h[2-4]>.*?<\/h[2-4]>)<\/p>/g, '$1');
-    
-    // Handle lists properly
-    html = html.replace(/^- (.*?)(?=\n-|\n\n|$)/gm, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-    
+        if (!line) {
+            // Empty line - close current list if we're in one
+            if (inList && listItems.length > 0) {
+                processedLines.push(`<ul>${listItems.join('')}</ul>`);
+                listItems = [];
+                inList = false;
+            }
+            continue;
+        }
+
+        // Check if this line is a list item
+        if (line.startsWith('- ') || line.startsWith('* ') || /^\d+\./.test(line)) {
+            if (!inList) {
+                inList = true;
+            }
+            const listItemContent = line.replace(/^(- |\* |\d+\.)/, '').trim();
+            listItems.push(`<li>${listItemContent}</li>`);
+        } else {
+            // Not a list item - close current list if we're in one
+            if (inList && listItems.length > 0) {
+                processedLines.push(`<ul>${listItems.join('')}</ul>`);
+                listItems = [];
+                inList = false;
+            }
+            
+            // Handle regular content
+            if (line.startsWith('<h') || line.startsWith('<img') || line.startsWith('<a')) {
+                // Already HTML tags, leave as is
+                processedLines.push(line);
+            } else {
+                // Wrap in paragraph
+                processedLines.push(`<p>${line}</p>`);
+            }
+        }
+    }
+
+    // Close any remaining list
+    if (inList && listItems.length > 0) {
+        processedLines.push(`<ul>${listItems.join('')}</ul>`);
+    }
+
+    html = processedLines.join('\n');
+
+    // Step 3: Clean up empty paragraphs and fix spacing
+    html = html
+        .replace(/<p><\/p>/g, '')
+        .replace(/(<\/h[2-4]>)\s*<p>/g, '$1')
+        .replace(/<\/p>\s*(<h[2-4]>)/g, '$1')
+        .replace(/<p>(<ul>.*?<\/ul>)<\/p>/g, '$1');
+
     return html;
 }
 
 function generateSchemaMarkup(frontmatter, slug, url) {
     const rating = parseInt(frontmatter.rating) || 4;
-    const title = frontmatter.title || formatSlug(slug);
-    
+    // Clean up the product name by removing "Best" and "Honest Review"
+    const productName = (frontmatter.title || formatSlug(slug))
+        .replace(/^Best /, '')
+        .replace(/ – Honest Review.*$/, '')
+        .trim();
+
     return JSON.stringify({
         "@context": "https://schema.org",
         "@type": "Product",
-        "name": title.replace(/ - Honest Review$/, '').replace(/^Best /, ''),
+        "name": productName,
         "description": frontmatter.description || 'Comprehensive product review and analysis',
+        "image": frontmatter.image || '',
         "review": {
             "@type": "Review",
             "reviewRating": {
