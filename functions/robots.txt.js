@@ -1,16 +1,13 @@
 export async function onRequestGet(context) {
-    const baseUrl = context.env.SITE_URL || 'https://reviewindex.pages.dev';
-    const currentDate = new Date().toISOString().split('T')[0];
-    
-    const robots = `# Robots.txt for ReviewIndex
+  const baseUrl = context.env.SITE_URL || "https://reviewindex.pages.dev";
+  const currentDate = new Date().toISOString().split("T")[0];
+
+  const robots = `# Robots.txt for ReviewIndex
 # Generated: ${currentDate}
 
 User-agent: *
 Allow: /
-Allow: /review/
-Allow: /category/
-Disallow: /api/
-Disallow: /admin/
+Disallow: /adminpage.html
 
 # Sitemaps
 Sitemap: ${baseUrl}/sitemap.xml
@@ -34,11 +31,11 @@ Allow: /
 User-agent: FacebookExternalHit
 Allow: /`;
 
-    return new Response(robots, {
-        headers: {
-            'Content-Type': 'text/plain',
-            'Cache-Control': 'public, max-age=86400', // 24 hours
-            'X-Sitemap-LastGenerated': currentDate
-        }
-    });
+  return new Response(robots, {
+    headers: {
+      "Content-Type": "text/plain",
+      "Cache-Control": "public, max-age=86400", // 24 hours
+      "X-Sitemap-LastGenerated": currentDate,
+    },
+  });
 }
