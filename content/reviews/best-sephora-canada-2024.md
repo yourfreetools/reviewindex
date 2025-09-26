@@ -1,14 +1,5 @@
 ---
-title: "Sephora Canada 2024 - Honest Review"
-description: "Comprehensive review of Sephora Canada covering selection, customer service, shipping, return policy, and value for beauty shoppers in 2024."
-image: "https://api.ellecanada.com/app/uploads/2024/04/sephora_spring_sale_2024.jpg"
-rating: 3
-affiliateLink: ""
-youtubeId: ""
-categories: ["reviews", "beauty", "retail"]
-date: "2025-09-26T08:12:08.129Z"
-slug: "sephora-canada-2024-honest-review"
-draft: false
+related_posts: ["popular-reviews", "latest-reviews"]
 ---
 
 # Sephora Canada 2024 - Honest Review
