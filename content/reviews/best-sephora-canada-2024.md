@@ -13,7 +13,7 @@ draft: false
 
 # Sephora Canada 2024 - Honest Review
 
-![Sephora Canada 2024 - Honest Review](https://api.ellecanada.com/app/uploads/2024/04/sephora_spring_sale_2024.jpg,https://api.ellecanada.com/app/uploads/2024/04/sephora_spring_sale_2024.jpg)
+![Sephora Canada 2024 - Honest Review](https://api.ellecanada.com/app/uploads/2024/04/sephora_spring_sale_2024.jpg)
 
  Comprehensive review of Sephora Canada covering selection, customer service, shipping, return policy, and value for beauty shoppers in 2024.
 
