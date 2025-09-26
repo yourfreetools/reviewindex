@@ -2,208 +2,82 @@
 export async function onRequest(context) {
     const { request, params, env } = context;
     const slug = params.slug;
-    
+
     try {
-        // If it's a direct file request for .md, redirect to proper URL
+        // Redirect raw .md requests to prettier URL
         if (slug.endsWith('.md')) {
             const cleanSlug = slug.replace('.md', '');
             return Response.redirect(`${new URL(request.url).origin}/review/${cleanSlug}`, 301);
         }
 
-        // Fetch the current post content
+        // 1) Get the markdown content of the post
         const postContent = await fetchPostContent(slug, env.GITHUB_TOKEN);
-        
         if (!postContent) {
             return renderErrorPage('Review not found', 'The requested review could not be found.');
         }
 
-        // Parse current post frontmatter
-        const { frontmatter: currentFrontmatter, content } = parseMarkdown(postContent);
-        
-        // Convert markdown to HTML first
-        const htmlContent = convertMarkdownToHTML(content);
-        
-        // Get related posts WITH CACHING
-        const relatedPosts = await findRelatedPostsWithCache(
-            currentFrontmatter, 
-            slug, 
-            env.GITHUB_TOKEN,
-            env.RELATED_POSTS  // KV namespace
-        );
+        // 2) Parse frontmatter + markdown body
+        let { frontmatter: currentFrontmatter, content } = parseMarkdown(postContent);
+        if (!currentFrontmatter) currentFrontmatter = {};
 
-        // Render the post page
-        const fullHtml = await renderPostPage(
-            currentFrontmatter,
-            htmlContent, 
-            slug, 
-            request.url, 
-            relatedPosts
-        );
-        
+        let relatedPosts = [];
+
+        // 3) If already checked -> use saved related posts inside frontmatter
+        if (currentFrontmatter.checked) {
+            const saved = currentFrontmatter.related || [];
+            if (Array.isArray(saved)) {
+                relatedPosts = saved.map(r => ({
+                    slug: r.slug,
+                    title: r.title || formatSlug(r.slug),
+                    description: r.description || '',
+                    image: r.image || '/default-thumbnail.jpg',
+                    categories: r.categories || []
+                }));
+            } else {
+                relatedPosts = [];
+            }
+        } else {
+            // 4) First view: compute related posts, persist into markdown
+            const fresh = await findRelatedPostsFromGitHub(currentFrontmatter, slug, env.GITHUB_TOKEN);
+            relatedPosts = fresh.slice(0, 3); // limit to 3
+
+            // Save full objects for later users
+            currentFrontmatter.related = relatedPosts.map(p => ({
+                slug: p.slug,
+                title: p.title,
+                description: p.description || '',
+                image: p.image || '/default-thumbnail.jpg',
+                categories: p.categories || []
+            }));
+            currentFrontmatter.checked = true;
+
+            // Attempt to write back to GitHub; errors are logged but don't block page render
+            try {
+                await updateMarkdownFileWithRelated(slug, postContent, currentFrontmatter, env.GITHUB_TOKEN);
+            } catch (err) {
+                console.error('Failed to update markdown with related:', err);
+                // continue without blocking user
+            }
+        }
+
+        // 5) Convert body markdown to HTML and render the post page
+        const htmlContent = convertMarkdownToHTML(content);
+        const fullHtml = await renderPostPage(currentFrontmatter, htmlContent, slug, request.url, relatedPosts);
+
         return new Response(fullHtml, {
-            headers: { 
+            headers: {
                 'Content-Type': 'text/html; charset=utf-8',
                 'X-Content-Type-Options': 'nosniff',
                 'X-Frame-Options': 'DENY'
             }
         });
-
     } catch (error) {
         console.error('Error rendering page:', error);
         return renderErrorPage('Server Error', 'An error occurred while loading the review.');
     }
 }
 
-// ==================== CACHED RELATED POSTS ====================
-
-async function findRelatedPostsWithCache(currentFrontmatter, currentSlug, githubToken, kvNamespace) {
-    const cacheKey = `related-${currentSlug}`;
-    
-    try {
-        // 1. CHECK CACHE FIRST
-        const cached = await kvNamespace?.get(cacheKey);
-        
-        if (cached) {
-            console.log('✅ Cache HIT for:', currentSlug);
-            return JSON.parse(cached);
-        }
-        
-        console.log('🔄 Cache MISS for:', currentSlug, '- Fetching from GitHub...');
-        
-        // 2. FETCH FRESH DATA FROM GITHUB
-        const relatedPosts = await findRelatedPostsFromGitHub(
-            currentFrontmatter, 
-            currentSlug, 
-            githubToken
-        );
-        
-        // 3. STORE IN CACHE (24 HOURS) - only if KV exists
-        if (relatedPosts.length > 0 && kvNamespace) {
-            await kvNamespace.put(
-                cacheKey, 
-                JSON.stringify(relatedPosts), 
-                { expirationTtl: 86400 } // 24 hours
-            );
-            console.log('💾 Cached', relatedPosts.length, 'related posts for:', currentSlug);
-        }
-        
-        return relatedPosts;
-        
-    } catch (error) {
-        console.error('❌ Cache error for', currentSlug, ':', error);
-        return []; // Return empty array on error
-    }
-}
-
-async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githubToken) {
-    try {
-        // Get all posts metadata
-        const allPosts = await fetchAllPostsMetadata(githubToken);
-        if (!allPosts || allPosts.length === 0) return [];
-
-        const currentPostCategories = normalizeCategories(currentFrontmatter.categories);
-        const related = [];
-
-        // Check each post for category matches
-        for (const post of allPosts) {
-            if (post.slug === currentSlug) continue; // Skip current post
-            
-            const postCategories = normalizeCategories(post.categories);
-            const matchingCategories = findMatchingCategories(currentPostCategories, postCategories);
-            
-            if (matchingCategories.length > 0) {
-                related.push({
-                    title: post.title || formatSlug(post.slug),
-                    slug: post.slug,
-                    description: post.description || '',
-                    image: post.image || '/default-thumbnail.jpg',
-                    categories: matchingCategories,
-                    matchCount: matchingCategories.length
-                });
-                
-                // Limit to 4 related posts
-                if (related.length >= 4) break;
-            }
-        }
-
-        console.log('📊 Found', related.length, 'related posts for:', currentSlug);
-        return related;
-
-    } catch (error) {
-        console.error('Error fetching related posts from GitHub:', error);
-        return [];
-    }
-}
-
-async function fetchAllPostsMetadata(githubToken) {
-    const REPO_OWNER = 'yourfreetools';
-    const REPO_NAME = 'reviewindex';
-    
-    try {
-        const response = await fetch(
-            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/content/reviews`,
-            {
-                headers: {
-                    'Authorization': `token ${githubToken}`,
-                    'User-Agent': 'Review-Index-App',
-                    'Accept': 'application/vnd.github.v3+json'
-                }
-            }
-        );
-
-        if (response.status === 200) {
-            const files = await response.json();
-            const markdownFiles = files.filter(file => file.name.endsWith('.md'));
-            
-            const postsMetadata = [];
-            
-            // Fetch metadata for each file (limit to 20 for performance)
-            for (const file of markdownFiles.slice(0, 20)) {
-                try {
-                    const slug = file.name.replace('.md', '');
-                    const contentResponse = await fetch(
-                        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/content/reviews/${file.name}`,
-                        {
-                            headers: {
-                                'Authorization': `token ${githubToken}`,
-                                'User-Agent': 'Review-Index-App',
-                                'Accept': 'application/vnd.github.v3.raw'
-                            }
-                        }
-                    );
-                    
-                    if (contentResponse.status === 200) {
-                        const content = await contentResponse.text();
-                        // Only parse the first 15 lines for performance
-                        const firstLines = content.split('\n').slice(0, 15).join('\n');
-                        const { frontmatter } = parseMarkdown(firstLines + '\n---\n');
-                        
-                        postsMetadata.push({
-                            slug: slug,
-                            title: frontmatter.title,
-                            description: frontmatter.description,
-                            image: frontmatter.image,
-                            categories: frontmatter.categories
-                        });
-                    }
-                } catch (error) {
-                    console.error('Error processing file:', file.name, error);
-                    continue;
-                }
-            }
-            
-            return postsMetadata;
-        }
-        
-        return [];
-        
-    } catch (error) {
-        console.error('Error fetching posts metadata:', error);
-        return [];
-    }
-}
-
-// ==================== EXISTING HELPER FUNCTIONS ====================
+// ==================== Utilities: FETCH + UPDATE MARKDOWN ====================
 
 async function fetchPostContent(slug, githubToken) {
     const REPO_OWNER = 'yourfreetools';
@@ -225,6 +99,7 @@ async function fetchPostContent(slug, githubToken) {
         if (response.status === 200) {
             return await response.text();
         }
+        console.error('fetchPostContent non-200:', response.status, await response.text());
         return null;
     } catch (error) {
         console.error('Error fetching post:', error);
@@ -232,40 +107,357 @@ async function fetchPostContent(slug, githubToken) {
     }
 }
 
+async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, githubToken) {
+    const REPO_OWNER = 'yourfreetools';
+    const REPO_NAME = 'reviewindex';
+    const filePath = `content/reviews/${slug}.md`;
+
+    // Build YAML frontmatter lines with support for arrays and nested objects
+    const yamlLines = Object.entries(frontmatter).map(([key, value]) => {
+        // If array of objects (like related)
+        if (Array.isArray(value)) {
+            if (value.length > 0 && typeof value[0] === 'object') {
+                // Multi-line YAML list of objects
+                return `${key}:\n${value.map(v =>
+`  - slug: "${escapeYaml(String(v.slug || ''))}"
+    title: "${escapeYaml(String(v.title || ''))}"
+    description: "${escapeYaml(String(v.description || ''))}"
+    image: "${escapeYaml(String(v.image || '/default-thumbnail.jpg'))}"
+    categories: [${(v.categories || []).map(c => `"${escapeYaml(String(c))}"`).join(', ')}]`).join('\n')}`;
+            } else {
+                // Simple list of strings
+                return `${key}: [${value.map(v => `"${escapeYaml(String(v))}"`).join(', ')}]`;
+            }
+        } else if (value && typeof value === 'object') {
+            return `${key}:\n${Object.entries(value).map(([k, v]) => `  ${k}: "${escapeYaml(String(v))}"`).join('\n')}`;
+        } else {
+            // simple scalar
+            return `${key}: "${escapeYaml(String(value))}"`;
+        }
+    });
+
+    const { content } = parseMarkdown(oldContent);
+    const newMd = `---\n${yamlLines.join('\n')}\n---\n\n${content}`;
+
+    // Get file SHA to update
+    const getRes = await fetch(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${filePath}`,
+        { headers: { Authorization: `token ${githubToken}`, 'User-Agent': 'Review-Index-App' } }
+    );
+    if (!getRes.ok) {
+        const body = await getRes.text();
+        throw new Error(`Failed to get file info: ${getRes.status} ${body}`);
+    }
+    const fileData = await getRes.json();
+
+    const putRes = await fetch(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${filePath}`,
+        {
+            method: 'PUT',
+            headers: {
+                'Authorization': `token ${githubToken}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'Review-Index-App'
+            },
+            body: JSON.stringify({
+                message: `Add related posts to ${slug}`,
+                content: typeof Buffer !== 'undefined'
+                    ? Buffer.from(newMd).toString('base64')
+                    : btoa(unescape(encodeURIComponent(newMd))),
+                sha: fileData.sha
+            })
+        }
+    );
+
+    if (!putRes.ok) {
+        const body = await putRes.text();
+        throw new Error(`Failed to update file: ${putRes.status} ${body}`);
+    }
+
+    return true;
+}
+
+function escapeYaml(s) {
+    return s.replace(/"/g, '\\"');
+}
+
+// ==================== MARKDOWN PARSING (YAML frontmatter + body) ====================
 function parseMarkdown(content) {
     const frontmatter = {};
     let markdownContent = content;
-    
-    if (content.startsWith('---')) {
+
+    if (content && content.startsWith('---')) {
         const end = content.indexOf('---', 3);
         if (end !== -1) {
             const yaml = content.substring(3, end).trim();
             markdownContent = content.substring(end + 3).trim();
-            
-            yaml.split('\n').forEach(line => {
-                const colon = line.indexOf(':');
-                if (colon > 0) {
-                    const key = line.substring(0, colon).trim();
-                    let value = line.substring(colon + 1).trim();
-                    
-                    if (value.startsWith('"') && value.endsWith('"')) {
-                        value = value.substring(1, value.length - 1);
-                    } else if (value.startsWith("'") && value.endsWith("'")) {
-                        value = value.substring(1, value.length - 1);
-                    } else if (value.startsWith('[') && value.endsWith(']')) {
-                        value = value.substring(1, value.length - 1).split(',').map(item => item.trim().replace(/"/g, ''));
+
+            // Parse YAML lines - support:
+            // key: "value"
+            // key: [ "a","b" ]
+            // key:
+            //   - slug: "x"
+            //     title: "y"
+            //     description: "z"
+            //     image: "..."
+            //     categories: ["a","b"]
+            const lines = yaml.split('\n');
+            let i = 0;
+            while (i < lines.length) {
+                const raw = lines[i];
+                const line = raw.replace(/\r$/, '');
+                // match key: value or key: [...]
+                const kvMatch = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
+                if (!kvMatch) { i++; continue; }
+                const key = kvMatch[1];
+                let rest = kvMatch[2];
+
+                if (rest === '') {
+                    // Possibly a complex block (array or object list)
+                    // Check next lines
+                    const nextLine = (lines[i + 1] || '');
+                    if (/^\s*-\s+/.test(nextLine)) {
+                        // It's a list; check if list contains objects or scalars
+                        const list = [];
+                        i++;
+                        while (i < lines.length) {
+                            const l = lines[i];
+                            if (/^\s*-\s+/.test(l)) {
+                                // start of object or scalar
+                                const afterDash = l.replace(/^\s*-\s+/, '');
+                                if (afterDash && afterDash.includes(':')) {
+                                    // unlikely: inline object, but treat as object
+                                    // parse as object from this line until next '-' at same indent
+                                    const obj = {};
+                                    // parse current line inline attributes
+                                    const inlineParts = afterDash.split(/\s*,\s*/);
+                                    inlineParts.forEach(p => {
+                                        const idx = p.indexOf(':');
+                                        if (idx > -1) {
+                                            const k = p.substring(0, idx).trim();
+                                            let v = p.substring(idx + 1).trim();
+                                            v = stripQuotes(v);
+                                            obj[k] = v;
+                                        }
+                                    });
+                                    list.push(obj);
+                                    i++;
+                                } else {
+                                    // Multi-line object: read following indented lines
+                                    const obj = {};
+                                    // If this dash line has nothing (just '-'), then subsequent lines are indented properties
+                                    if (afterDash.trim() === '') {
+                                        i++;
+                                        while (i < lines.length && /^\s{2,}[^-]/.test(lines[i])) {
+                                            const propLine = lines[i].trim();
+                                            const propMatch = propLine.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
+                                            if (propMatch) {
+                                                const pk = propMatch[1];
+                                                let pv = propMatch[2] || '';
+                                                if (pv.startsWith('[') && pv.endsWith(']')) {
+                                                    // array
+                                                    pv = pv.substring(1, pv.length - 1).split(',').map(x => stripQuotes(x.trim()));
+                                                } else {
+                                                    pv = stripQuotes(pv);
+                                                }
+                                                obj[pk] = pv;
+                                            }
+                                            i++;
+                                        }
+                                        list.push(obj);
+                                    } else {
+                                        // dash line contains first property like '- slug: "x"'
+                                        const firstProp = afterDash;
+                                        const inlineMatch = firstProp.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
+                                        if (inlineMatch) {
+                                            obj = {};
+                                            obj[inlineMatch[1]] = stripQuotes(inlineMatch[2]);
+                                            i++;
+                                            // read rest properties indented
+                                            while (i < lines.length && /^\s{2,}[^-]/.test(lines[i])) {
+                                                const propLine = lines[i].trim();
+                                                const propMatch = propLine.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
+                                                if (propMatch) {
+                                                    const pk = propMatch[1];
+                                                    let pv = propMatch[2] || '';
+                                                    if (pv.startsWith('[') && pv.endsWith(']')) {
+                                                        pv = pv.substring(1, pv.length - 1).split(',').map(x => stripQuotes(x.trim()));
+                                                    } else {
+                                                        pv = stripQuotes(pv);
+                                                    }
+                                                    obj[pk] = pv;
+                                                }
+                                                i++;
+                                            }
+                                            list.push(obj);
+                                        } else {
+                                            // fallback
+                                            i++;
+                                        }
+                                    }
+                                }
+                                // continue loop
+                            } else {
+                                // end of list
+                                break;
+                            }
+                        }
+                        frontmatter[key] = list;
+                        continue; // don't increment i (already moved)
+                    } else {
+                        // block but not a list - try to parse nested single object
+                        const obj = {};
+                        i++;
+                        while (i < lines.length && /^\s{2,}/.test(lines[i])) {
+                            const propLine = lines[i].trim();
+                            const propMatch = propLine.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
+                            if (propMatch) {
+                                const pk = propMatch[1];
+                                let pv = propMatch[2] || '';
+                                if (pv.startsWith('[') && pv.endsWith(']')) {
+                                    pv = pv.substring(1, pv.length - 1).split(',').map(x => stripQuotes(x.trim()));
+                                } else {
+                                    pv = stripQuotes(pv);
+                                }
+                                obj[pk] = pv;
+                            }
+                            i++;
+                        }
+                        frontmatter[key] = obj;
+                        continue;
                     }
-                    
-                    frontmatter[key] = value;
+                } else {
+                    // Scalar or inline array like key: [ "a", "b" ]
+                    rest = rest.trim();
+                    if (rest.startsWith('[') && rest.endsWith(']')) {
+                        const arr = rest.substring(1, rest.length - 1).split(',').map(x => stripQuotes(x.trim()));
+                        frontmatter[key] = arr;
+                    } else {
+                        frontmatter[key] = stripQuotes(rest);
+                    }
                 }
-            });
+                i++;
+            }
         }
     }
-    
+
     return { frontmatter, content: markdownContent };
 }
 
+function stripQuotes(s) {
+    if (!s && s !== '') return s;
+    let t = String(s).trim();
+    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+        t = t.substring(1, t.length - 1);
+    }
+    return t;
+}
+
+// ==================== RELATED POSTS (compute from repo posts) ====================
+
+async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githubToken) {
+    try {
+        const allPosts = await fetchAllPostsMetadata(githubToken);
+        if (!allPosts || allPosts.length === 0) return [];
+
+        const currentPostCategories = normalizeCategories(currentFrontmatter.categories);
+        const related = [];
+
+        for (const post of allPosts) {
+            if (post.slug === currentSlug) continue;
+            const postCategories = normalizeCategories(post.categories);
+            const matchingCategories = findMatchingCategories(currentPostCategories, postCategories);
+            if (matchingCategories.length > 0) {
+                related.push({
+                    title: post.title || formatSlug(post.slug),
+                    slug: post.slug,
+                    description: post.description || '',
+                    image: post.image || '/default-thumbnail.jpg',
+                    categories: matchingCategories,
+                    matchCount: matchingCategories.length
+                });
+                if (related.length >= 4) break;
+            }
+        }
+
+        // Sort by matchCount desc
+        related.sort((a, b) => (b.matchCount || 0) - (a.matchCount || 0));
+        return related;
+    } catch (error) {
+        console.error('Error fetching related posts from GitHub:', error);
+        return [];
+    }
+}
+
+async function fetchAllPostsMetadata(githubToken) {
+    const REPO_OWNER = 'yourfreetools';
+    const REPO_NAME = 'reviewindex';
+
+    try {
+        const response = await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/content/reviews`,
+            {
+                headers: {
+                    'Authorization': `token ${githubToken}`,
+                    'User-Agent': 'Review-Index-App',
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            }
+        );
+
+        if (response.status === 200) {
+            const files = await response.json();
+            const markdownFiles = files.filter(file => file.name.endsWith('.md'));
+            const postsMetadata = [];
+
+            // Limit to 50 files for safety
+            for (const file of markdownFiles.slice(0, 50)) {
+                try {
+                    const slug = file.name.replace('.md', '');
+                    const contentResponse = await fetch(
+                        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/content/reviews/${file.name}`,
+                        {
+                            headers: {
+                                'Authorization': `token ${githubToken}`,
+                                'User-Agent': 'Review-Index-App',
+                                'Accept': 'application/vnd.github.v3.raw'
+                            }
+                        }
+                    );
+
+                    if (contentResponse.status === 200) {
+                        const content = await contentResponse.text();
+                        // parse first N lines to get frontmatter
+                        const firstLines = content.split('\n').slice(0, 30).join('\n');
+                        const { frontmatter } = parseMarkdown(firstLines + '\n---\n');
+                        postsMetadata.push({
+                            slug,
+                            title: frontmatter.title,
+                            description: frontmatter.description,
+                            image: frontmatter.image,
+                            categories: frontmatter.categories
+                        });
+                    }
+                } catch (err) {
+                    console.error('Error processing file:', file.name, err);
+                    continue;
+                }
+            }
+            return postsMetadata;
+        }
+
+        return [];
+    } catch (error) {
+        console.error('Error fetching posts metadata:', error);
+        return [];
+    }
+}
+
+// ==================== RENDER / MARKUP / HELPERS (kept SEO + HTML) ====================
+
 function convertMarkdownToHTML(markdown) {
+    if (!markdown) return '';
+
     let html = markdown
         .replace(/^# (.*)$/gm, '<h2>$1</h2>')
         .replace(/^## (.*)$/gm, '<h3>$1</h3>')
@@ -285,7 +477,6 @@ function convertMarkdownToHTML(markdown) {
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
-        
         if (!line) {
             if (inList && listItems.length > 0) {
                 processedLines.push(`<ul>${listItems.join('')}</ul>`);
@@ -305,9 +496,9 @@ function convertMarkdownToHTML(markdown) {
                 listItems = [];
                 inList = false;
             }
-            
-            if (line.startsWith('<h') || line.startsWith('<img') || line.startsWith('<a') || 
-                line.startsWith('<blockquote') || line.startsWith('<pre') || line.startsWith('<ul') || 
+
+            if (line.startsWith('<h') || line.startsWith('<img') || line.startsWith('<a') ||
+                line.startsWith('<blockquote') || line.startsWith('<pre') || line.startsWith('<ul') ||
                 line.startsWith('<ol')) {
                 processedLines.push(line);
             } else {
@@ -333,20 +524,20 @@ function convertMarkdownToHTML(markdown) {
 
 function generateYouTubeEmbed(youtubeUrl, title) {
     function getYouTubeId(url) {
-        const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+        const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\\w\/)|(embed\/)|(watch\\?))\\??v?=?([^#&?]*).*/;
         const match = url.match(regExp);
         return (match && match[7].length === 11) ? match[7] : null;
     }
-    
+
     const videoId = getYouTubeId(youtubeUrl);
     if (!videoId) return '';
-    
+
     return `
     <section class="youtube-embed" aria-labelledby="video-title">
         <h3 id="video-title">📺 Video Review</h3>
         <div class="video-wrapper">
             <iframe 
-                src="https://www.youtube.com/embed/${videoId}" 
+                src="https://www.youtube.com/embed/${escapeHtml(videoId)}" 
                 title="Video review of ${escapeHtml(title)}"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                 allowfullscreen
@@ -395,7 +586,8 @@ function generateSchemaMarkup(frontmatter, slug, url) {
 }
 
 function formatSlug(slug) {
-    return slug.split('-').map(word => 
+    if (!slug) return '';
+    return slug.split('-').map(word =>
         word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
 }
@@ -434,8 +626,7 @@ function renderErrorPage(title, message) {
     </div>
 </body>
 </html>`;
-    
-    return new Response(html, { 
+    return new Response(html, {
         status: 404,
         headers: { 'Content-Type': 'text/html' }
     });
@@ -443,16 +634,14 @@ function renderErrorPage(title, message) {
 
 function normalizeCategories(categories) {
     if (!categories) return [];
-    
     let catsArray = Array.isArray(categories) ? categories : [categories];
-    
     return catsArray
         .map(cat => cat.trim().toLowerCase())
         .filter(cat => cat !== 'reviews' && cat !== 'review');
 }
 
 function findMatchingCategories(currentCats, otherCats) {
-    return currentCats.filter(cat => 
+    return currentCats.filter(cat =>
         otherCats.includes(cat)
     );
 }
@@ -831,7 +1020,7 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
         // Enhanced lazy loading with intersection observer
         document.addEventListener('DOMContentLoaded', function() {
             // Lazy load images
-            const lazyImages = [].slice.call(document.querySelectorAll('img[loading="lazy"]'));
+            const lazyImages = [].slice.call(document.querySelectorAll('img[loading=\"lazy\"]'));
             
             if ('IntersectionObserver' in window) {
                 let lazyImageObserver = new IntersectionObserver(function(entries, observer) {
@@ -857,7 +1046,7 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
             }
 
             // Smooth scrolling
-            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            document.querySelectorAll('a[href^=\"#\"]').forEach(anchor => {
                 anchor.addEventListener('click', function (e) {
                     e.preventDefault();
                     const target = document.querySelector(this.getAttribute('href'));
@@ -868,7 +1057,7 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
             });
             
             // External links loading state
-            document.querySelectorAll('a[target="_blank"]').forEach(link => {
+            document.querySelectorAll('a[target=\"_blank\"]').forEach(link => {
                 link.addEventListener('click', function() {
                     this.style.opacity = '0.7';
                 });
@@ -879,12 +1068,13 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
 </html>`;
 }
 
+// Build the related posts HTML - accepts full objects (slug,title,description,image,categories)
 function generateRelatedPostsHTML(relatedPosts, currentCategories) {
-    if (relatedPosts.length === 0) return '';
-    
+    if (!relatedPosts || relatedPosts.length === 0) return '';
+
     const normalizedCats = normalizeCategories(currentCategories);
     const displayCategory = normalizedCats.length > 0 ? normalizedCats[0] : 'related';
-    
+
     return `
 <section class="related-posts" aria-labelledby="related-posts-title">
     <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 2.5rem; border-radius: 12px; margin: 3rem 0; border-left: 4px solid #0369a1;">
@@ -895,10 +1085,10 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
         
         <div class="related-grid">
             ${relatedPosts.map(post => `
-            <a href="/review/${post.slug}" class="related-item">
+            <a href="/review/${post.slug}" class="related-item" aria-label="${escapeHtml(post.title)}">
                 <div class="related-thumbnail">
                     <img 
-                        src="${post.image}" 
+                        src="${escapeHtml(post.image || '/default-thumbnail.jpg')}" 
                         alt="${escapeHtml(post.title)}"
                         loading="lazy"
                         onerror="this.src='/default-thumbnail.jpg'"
@@ -908,8 +1098,8 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
                     <h3>${escapeHtml(post.title)}</h3>
                     ${post.description ? `<p>${escapeHtml(post.description)}</p>` : ''}
                     <div class="related-categories">
-                        ${post.categories.map(cat => `
-                            <span class="related-category">${cat}</span>
+                        ${(post.categories || []).map(cat => `
+                            <span class="related-category">${escapeHtml(cat)}</span>
                         `).join('')}
                     </div>
                 </div>
@@ -918,4 +1108,4 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
         </div>
     </div>
 </section>`;
-            }
+}
