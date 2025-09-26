@@ -33,7 +33,8 @@ export async function onRequestPost(context) {
             keyFeatures, 
             finalVerdict, 
             pros, 
-            cons 
+            cons,
+            relatedContent  // NEW: Added relatedContent field
         } = formData;
 
         if (!title?.trim() || !filename?.trim()) {
@@ -57,7 +58,8 @@ export async function onRequestPost(context) {
             keyFeatures: keyFeatures?.trim(),
             finalVerdict: finalVerdict?.trim(),
             pros: pros?.trim(),
-            cons: cons?.trim()
+            cons: cons?.trim(),
+            relatedContent: relatedContent?.trim()  // NEW: Added relatedContent
         });
 
         const result = await publishToGitHub({
@@ -95,6 +97,23 @@ function generateSEOMarkdown(data) {
     const keyFeaturesList = data.keyFeatures?.split('\n').filter(f => f.trim()).map(f => `- ${f.trim()}`).join('\n');
     const prosList = data.pros?.split('\n').filter(p => p.trim()).map(p => `- ${p.trim()}`).join('\n');
     const consList = data.cons?.split('\n').filter(c => c.trim()).map(c => `- ${c.trim()}`).join('\n');
+    
+    // NEW: Generate related content section
+    const relatedContentList = data.relatedContent?.split('\n')
+        .filter(url => url.trim())
+        .map(url => {
+            const cleanUrl = url.trim();
+            // Extract a readable title from the URL or use the URL itself
+            const title = cleanUrl.replace(/^https?:\/\//, '')
+                                .replace(/\/$/, '')
+                                .split('/')
+                                .pop()
+                                .replace(/-/g, ' ')
+                                .replace(/\.[^/.]+$/, '') // Remove file extension
+                                .replace(/\b\w/g, l => l.toUpperCase()); // Capitalize words
+            return `- [${title}](${cleanUrl})`;
+        })
+        .join('\n');
 
     return `---
 title: "${data.title.replace(/"/g, '\\"')}"
@@ -138,6 +157,14 @@ ${consList}
 ## Final Rating: ${data.rating || 5}/5 ⭐
 
 ${data.finalVerdict || '*Your final verdict and recommendation*'}
+
+${relatedContentList ? `
+## 📚 Related Content
+
+Check out these related articles and reviews:
+
+${relatedContentList}
+` : ''}
 
 ---
 
