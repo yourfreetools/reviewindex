@@ -610,7 +610,7 @@ function generateIndexHTML(posts) {
                 <ul class="nav-links">
                     <li><a href="#reviews">Reviews</a></li>
                     <li><a href="#categories">Categories</a></li>
-                    <li><a href="#about">About</a></li>
+                    <li><a href="https://www.youtube.com/channel/UCii1s_g9GPERU4VxXkfsNxw">YouTube</a></li>
                 </ul>
             </nav>
         </div>
