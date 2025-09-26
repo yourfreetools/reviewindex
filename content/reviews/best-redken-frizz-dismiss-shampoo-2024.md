@@ -1,14 +1,5 @@
 ---
-title: "Best Redken Frizz Dismiss Shampoo 2024 - Honest Review"
-description: "Comprehensive review of Redken Frizz Dismiss Sulfate-Free Shampoo covering features, frizz control performance, hydration benefits, and overall value for hair."
-image: "https://www.redken.com/dw/image/v2/AAFM_PRD/on/demandware.static/-/Sites-ppd-redken-master-catalog/default/dw103b1e74/images/pdp/frizz-dismiss-shampoo/redken-frizz-dismiss-sulfate-free-anti-frizz-shampoo.png"
-rating: 4
-affiliateLink: "https://amzn.to/48x6aS3"
-youtubeId: ""
-categories: ["reviews", "beauty", "haircare"]
-date: "2025-09-26T07:58:59.448Z"
-slug: "best-redken-frizz-dismiss-shampoo-2024-honest-review"
-draft: false
+related_posts: ["popular-reviews", "latest-reviews"]
 ---
 
 # Best Redken Frizz Dismiss Shampoo 2024 - Honest Review
