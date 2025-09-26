@@ -1,14 +1,5 @@
 ---
-title: "Light Phone III 2025 - Honest Review"
-description: "Comprehensive review of the Light Phone III covering minimalist features, performance, repairability, design, and value proposition for digital detox seekers."
-image: "https://i.ytimg.com/vi/KhMb0-t2MyU/maxresdefault.jpg"
-rating: 4
-affiliateLink: ""
-youtubeId: ""
-categories: ["electronics", "smartphones"]
-date: "2025-09-26T14:35:40.448Z"
-slug: "light-phone-iii-2025-honest-review"
-draft: false
+related_posts: ["popular-reviews", "latest-reviews"]
 ---
 
 # Light Phone III 2025 - Honest Review
