@@ -379,7 +379,142 @@ function escapeHtml(unsafe) {
         .replace(/'/g, "&#039;");
 }
 
-// ==================== RENDER FUNCTIONS ====================
+// ==================== MISSING FUNCTIONS ====================
+
+function generateYouTubeEmbed(youtubeUrl, title) {
+    if (!youtubeUrl) return '';
+    
+    // Extract YouTube video ID from various URL formats
+    function getYouTubeId(url) {
+        const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[7].length === 11) ? match[7] : null;
+    }
+    
+    const videoId = getYouTubeId(youtubeUrl);
+    if (!videoId) return '';
+    
+    return `
+    <section class="youtube-embed" aria-labelledby="video-title">
+        <h3 id="video-title">📺 Video Review</h3>
+        <div class="video-wrapper">
+            <iframe 
+                src="https://www.youtube.com/embed/${videoId}" 
+                title="Video review of ${escapeHtml(title)}"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                allowfullscreen
+                loading="lazy">
+            </iframe>
+        </div>
+        <p class="video-caption">Watch our detailed video review for a comprehensive overview</p>
+    </section>`;
+}
+
+function generateSchemaMarkup(frontmatter, slug, url) {
+    const rating = parseInt(frontmatter.rating) || 4;
+    const productName = (frontmatter.title || formatSlug(slug))
+        .replace(/^Best /, '')
+        .replace(/ – Honest Review.*$/, '')
+        .trim();
+
+    return JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": productName,
+        "description": frontmatter.description || 'Comprehensive product review and analysis',
+        "image": frontmatter.image || '',
+        "review": {
+            "@type": "Review",
+            "reviewRating": {
+                "@type": "Rating",
+                "ratingValue": rating.toString(),
+                "bestRating": "5"
+            },
+            "author": {
+                "@type": "Organization",
+                "name": "ReviewIndex"
+            },
+            "publisher": {
+                "@type": "Organization",
+                "name": "ReviewIndex"
+            }
+        },
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": rating.toString(),
+            "reviewCount": "1"
+        }
+    }, null, 2);
+}
+
+function renderErrorPage(title, message) {
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>${title} - ReviewIndex</title>
+    <meta name="robots" content="noindex">
+    <style>
+        body { 
+            font-family: system-ui, sans-serif; 
+            text-align: center; 
+            padding: 2rem; 
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .error-container { 
+            background: white; 
+            padding: 3rem; 
+            border-radius: 12px; 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 { 
+            color: #dc2626; 
+            margin-bottom: 1rem;
+            font-size: 2rem;
+        }
+        p {
+            color: #666;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+        a { 
+            color: #2563eb; 
+            text-decoration: none;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border: 2px solid #2563eb;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        a:hover {
+            background: #2563eb;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <h1>⚠️ ${title}</h1>
+        <p>${message}</p>
+        <a href="/">← Return to Homepage</a>
+    </div>
+</body>
+</html>`;
+    
+    return new Response(html, { 
+        status: 404,
+        headers: { 'Content-Type': 'text/html' }
+    });
+}
+
+// ==================== RENDER FUNCTION ====================
 
 async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relatedPosts = []) {
     const canonicalUrl = `https://reviewindex.pages.dev/review/${slug}`;
@@ -857,134 +992,4 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
         </div>
     </div>
 </section>`;
-}
-
-function generateYouTubeEmbed(youtubeUrl, title) {
-    function getYouTubeId(url) {
-        const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
-        const match = url.match(regExp);
-        return (match && match[7].length === 11) ? match[7] : null;
-    }
-    
-    const videoId = getYouTubeId(youtubeUrl);
-    if (!videoId) return '';
-    
-    return `
-    <section class="youtube-embed" aria-labelledby="video-title">
-        <h3 id="video-title">📺 Video Review</h3>
-        <div class="video-wrapper">
-            <iframe 
-                src="https://www.youtube.com/embed/${videoId}" 
-                title="Video review of ${escapeHtml(title)}"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                allowfullscreen
-                loading="lazy">
-            </iframe>
-        </div>
-        <p class="video-caption">Watch our detailed video review for a comprehensive overview</p>
-    </section>`;
-}
-
-function generateSchemaMarkup(frontmatter, slug, url) {
-    const rating = parseInt(frontmatter.rating) || 4;
-    const productName = (frontmatter.title || formatSlug(slug))
-        .replace(/^Best /, '')
-        .replace(/ – Honest Review.*$/, '')
-        .trim();
-
-    return JSON.stringify({
-        "@context": "https://schema.org",
-        "@type": "Product",
-        "name": productName,
-        "description": frontmatter.description || 'Comprehensive product review and analysis',
-        "image": frontmatter.image || '',
-        "review": {
-            "@type": "Review",
-            "reviewRating": {
-                "@type": "Rating",
-                "ratingValue": rating.toString(),
-                "bestRating": "5"
-            },
-            "author": {
-                "@type": "Organization",
-                "name": "ReviewIndex"
-            },
-            "publisher": {
-                "@type": "Organization",
-                "name": "ReviewIndex"
-            }
-        },
-        "aggregateRating": {
-            "@type": "AggregateRating",
-            "ratingValue": rating.toString(),
-            "reviewCount": "1"
         }
-    }, null, 2);
-}
-
-function renderErrorPage(title, message) {
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>${title} - ReviewIndex</title>
-    <meta name="robots" content="noindex">
-    <style>
-        body { 
-            font-family: system-ui, sans-serif; 
-            text-align: center; 
-            padding: 2rem; 
-            background: #f5f5f5;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-        .error-container { 
-            background: white; 
-            padding: 3rem; 
-            border-radius: 12px; 
-            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-            max-width: 500px;
-            width: 100%;
-        }
-        h1 { 
-            color: #dc2626; 
-            margin-bottom: 1rem;
-            font-size: 2rem;
-        }
-        p {
-            color: #666;
-            margin-bottom: 2rem;
-            line-height: 1.6;
-        }
-        a { 
-            color: #2563eb; 
-            text-decoration: none;
-            font-weight: 600;
-            padding: 0.75rem 1.5rem;
-            border: 2px solid #2563eb;
-            border-radius: 6px;
-            transition: all 0.3s ease;
-        }
-        a:hover {
-            background: #2563eb;
-            color: white;
-        }
-    </style>
-</head>
-<body>
-    <div class="error-container">
-        <h1>⚠️ ${title}</h1>
-        <p>${message}</p>
-        <a href="/">← Return to Homepage</a>
-    </div>
-</body>
-</html>`;
-    
-    return new Response(html, { 
-        status: 404,
-        headers: { 'Content-Type': 'text/html' }
-    });
-            }
