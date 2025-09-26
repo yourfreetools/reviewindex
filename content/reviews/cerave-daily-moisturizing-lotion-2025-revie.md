@@ -1,14 +1,5 @@
 ---
-title: "CeraVe Daily Moisturizing Lotion 2025 - Honest Review"
-description: "Comprehensive review of CeraVe Daily Moisturizing Lotion covering features, performance, skin benefits, and value for money. Perfect for dry and sensitive skin."
-image: "https://www.cerave.com/-/media/project/loreal/brand-sites/cerave/americas/us/products-v3/daily-moisturizing-lotion/700x700/cerave_daily_moisturizing_lotion_12oz_front_-700x700-v2.jpg"
-rating: 4
-affiliateLink: "https://amzn.to/4gFTxWV"
-youtubeId: ""
-categories: ["reviews", "beauty", "skincare"]
-date: "2025-09-25T19:02:45.215Z"
-slug: "cerave-daily-moisturizing-lotion-2025-honest-review"
-draft: false
+related_posts: ["popular-reviews", "latest-reviews"]
 ---
 
 # CeraVe Daily Moisturizing Lotion 2025 - Honest Review
