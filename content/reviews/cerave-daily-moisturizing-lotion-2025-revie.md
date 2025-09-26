@@ -1,6 +1,4 @@
 ---
-related_posts: ["popular-reviews", "latest-reviews"]
----
 
 # CeraVe Daily Moisturizing Lotion 2025 - Honest Review
 
