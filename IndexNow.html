@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>IndexNow JSON Generator</title>
+<meta name="robots" content="noindex">
+<style>
+body { 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+    padding: 20px; 
+    max-width: 1200px;
+    margin: 0 auto;
+    background-color: #f8f9fa;
+    color: #333;
+    line-height: 1.6;
+}
+.container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+.panel {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+h2 {
+    color: #2c3e50;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 10px;
+    margin-top: 0;
+}
+h3 {
+    color: #2c3e50;
+    margin-top: 0;
+}
+textarea { 
+    width: 100%; 
+    height: 200px; 
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: Consolas, monospace;
+    resize: vertical;
+}
+button { 
+    padding: 10px 15px; 
+    margin: 5px 5px 5px 0;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background-color 0.3s;
+}
+button:hover {
+    background-color: #2980b9;
+}
+button.secondary {
+    background-color: #95a5a6;
+}
+button.secondary:hover {
+    background-color: #7f8c8d;
+}
+#links { 
+    margin-top: 10px; 
+    max-height: 400px; 
+    overflow-y: auto;
+    border: 1px solid #eee;
+    padding: 10px;
+    border-radius: 4px;
+}
+label { 
+    display: block; 
+    margin-bottom: 8px; 
+    word-break: break-word;
+    padding: 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+label:hover {
+    background-color: #f1f8ff;
+}
+#jsonOutput { 
+    width: 100%; 
+    height: 300px; 
+    margin-top: 10px;
+    font-family: Consolas, monospace;
+}
+.instructions { 
+    background: #e8f4fc; 
+    padding: 15px; 
+    margin-bottom: 20px; 
+    border-radius: 5px;
+    grid-column: 1 / -1;
+}
+.new-badge { 
+    background: #27ae60; 
+    color: white; 
+    padding: 2px 6px; 
+    border-radius: 3px; 
+    font-size: 0.8em; 
+    margin-left: 5px; 
+    font-weight: bold;
+}
+.date-info {
+    margin-left: 10px;
+    color: #7f8c8d;
+    font-size: 0.9em;
+}
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+}
+.status {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 4px;
+    display: none;
+}
+.status.success {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+.status.error {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+.count-badge {
+    background: #3498db;
+    color: white;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+}
+</style>
+</head>
+<body>
+<h2>IndexNow JSON Generator</h2>
+
+<div class="instructions">
+<strong>Steps to submit:</strong>
+<ol>
+<li>Paste your sitemap XML below.</li>
+<li>Click <strong>Show Latest 10 Links</strong> to see recent posts.</li>
+<li>Click <strong>Show New Posts (Last 24h)</strong> to see posts less than 1 day old.</li>
+<li>Select the links you want to submit (use Select All / Deselect All buttons if needed).</li>
+<li>Copy the generated JSON by clicking <strong>Copy JSON</strong>.</li>
+<li>Copy the selected links by clicking <strong>Copy Links</strong>.</li>
+<li>Go to <a href="https://reqbin.com/" target="_blank">ReqBin</a> or another REST client.</li>
+<li>Set method: <strong>POST</strong>, URL: <strong>https://api.indexnow.org/IndexNow</strong></li>
+<li>Add header: <strong>Content-Type: application/json; charset=utf-8</strong></li>
+<li>Paste the copied JSON into the body and click Send.</li>
+</ol>
+</div>
+
+<div class="container">
+    <div class="panel">
+        <div class="panel-header">
+            <h3>Input & Controls</h3>
+        </div>
+        <textarea id="sitemapXml" placeholder="Paste your sitemap XML here..."></textarea>
+        
+        <div class="controls">
+            <button id="loadLatest">Show Latest 10 Links</button>
+            <button id="loadNew">Show New Posts (Last 24h)</button>
+            <button id="selectAll">Select All</button>
+            <button id="deselectAll">Deselect All</button>
+        </div>
+        
+        <div id="statusMessage" class="status"></div>
+    </div>
+    
+    <div class="panel">
+        <div class="panel-header">
+            <h3>JSON Output</h3>
+            <span id="jsonCount" class="count-badge">0 URLs</span>
+        </div>
+        <textarea id="jsonOutput" readonly placeholder="Generated JSON will appear here..."></textarea>
+        <div class="controls">
+            <button id="copyJson">Copy JSON to Clipboard</button>
+            <button id="copyLinks" class="secondary">Copy Links to Clipboard</button>
+        </div>
+    </div>
+    
+    <div class="panel" style="grid-column: 1 / -1;">
+        <div class="panel-header">
+            <h3>Selected Links <span id="linksCount" class="count-badge">0 selected</span></h3>
+        </div>
+        <div id="links"></div>
+    </div>
+</div>
+
+<script>
+// Your IndexNow key and host
+const host = "reviewindex.pages.dev";
+const key = "fda744d3cbef4793b1af0b512bc481a0";
+const keyLocation = `https://${host}/${key}.txt`;
+
+// Load sitemap and display latest 10 posts
+document.getElementById('loadLatest').addEventListener('click', () => {
+    loadUrls(true, 10);
+});
+
+// Load sitemap and display posts from last 24 hours
+document.getElementById('loadNew').addEventListener('click', () => {
+    loadUrls(false, 0, 1);
+});
+
+// Load URLs based on criteria
+function loadUrls(sortByDate = true, limit = 0, daysOld = 0) {
+    const xmlText = document.getElementById('sitemapXml').value.trim();
+    if(!xmlText) return showStatus("Please paste your sitemap XML.", "error");
+
+    try {
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(xmlText, "application/xml");
+        
+        // Check for XML parsing errors
+        if (xml.getElementsByTagName("parsererror").length > 0) {
+            throw new Error("Invalid XML format");
+        }
+        
+        const ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
+        const urlElements = xml.getElementsByTagNameNS(ns, "url");
+
+        let urls = Array.from(urlElements).map(u => {
+            const locEl = u.getElementsByTagNameNS(ns, "loc")[0];
+            const lastmodEl = u.getElementsByTagNameNS(ns, "lastmod")[0];
+            let lastmod = lastmodEl ? lastmodEl.textContent.trim().replace(/^"|"$/g, "") : null;
+            return { loc: locEl?.textContent, lastmod };
+        }).filter(u => u.loc); // Filter out entries without URLs
+
+        // Filter by date if needed
+        if (daysOld > 0) {
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+            urls = urls.filter(u => u.lastmod && new Date(u.lastmod) > cutoffDate);
+        }
+
+        // Sort by lastmod descending if requested
+        if (sortByDate) {
+            urls.sort((a, b) => new Date(b.lastmod || 0) - new Date(a.lastmod || 0));
+        }
+
+        // Apply limit if needed
+        if (limit > 0) {
+            urls = urls.slice(0, limit);
+        }
+
+        displayUrls(urls, daysOld > 0);
+        showStatus(`Loaded ${urls.length} URLs successfully.`, "success");
+
+    } catch (err) {
+        showStatus("Failed to parse sitemap XML: " + err.message, "error");
+    }
+}
+
+// Display URLs in the links container
+function displayUrls(urls, showNewBadge = false) {
+    const linksDiv = document.getElementById('links');
+    linksDiv.innerHTML = "";
+
+    if (urls.length === 0) {
+        linksDiv.innerHTML = "<p>No matching URLs found.</p>";
+        generateJSON();
+        updateCounts();
+        return;
+    }
+
+    urls.forEach(u => {
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = true;
+        checkbox.value = u.loc;
+        label.appendChild(checkbox);
+        
+        const textNode = document.createTextNode(" " + u.loc);
+        label.appendChild(textNode);
+        
+        // Add "NEW" badge for posts less than 1 day old
+        if (showNewBadge && isLessThanOneDayOld(u.lastmod)) {
+            const badge = document.createElement('span');
+            badge.className = 'new-badge';
+            badge.textContent = 'NEW';
+            label.appendChild(badge);
+        }
+        
+        // Add lastmod date if available
+        if (u.lastmod) {
+            const dateSpan = document.createElement('span');
+            dateSpan.className = 'date-info';
+            dateSpan.textContent = `(${formatDate(u.lastmod)})`;
+            label.appendChild(dateSpan);
+        }
+        
+        linksDiv.appendChild(label);
+    });
+
+    generateJSON();
+    updateCounts();
+}
+
+// Check if a date is less than 1 day old
+function isLessThanOneDayOld(dateString) {
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = (now - date) / (1000 * 60 * 60);
+    return diffInHours < 24;
+}
+
+// Format date for display
+function formatDate(dateString) {
+    if (!dateString) return 'Unknown date';
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+}
+
+// Generate JSON for selected links
+function generateJSON() {
+    const selectedUrls = Array.from(document.querySelectorAll('#links input:checked')).map(i => i.value);
+    const payload = {
+        host,
+        key,
+        keyLocation,
+        urlList: selectedUrls
+    };
+    document.getElementById('jsonOutput').value = JSON.stringify(payload, null, 2);
+    updateCounts();
+}
+
+// Update counts display
+function updateCounts() {
+    const selectedCount = Array.from(document.querySelectorAll('#links input:checked')).length;
+    const totalCount = document.querySelectorAll('#links input').length;
+    
+    document.getElementById('linksCount').textContent = `${selectedCount} of ${totalCount} selected`;
+    document.getElementById('jsonCount').textContent = `${selectedCount} URLs`;
+}
+
+// Update JSON when checkboxes change
+document.getElementById('links').addEventListener('change', () => {
+    generateJSON();
+    updateCounts();
+});
+
+// Copy JSON to clipboard
+document.getElementById('copyJson').addEventListener('click', () => {
+    const jsonText = document.getElementById('jsonOutput').value;
+    if(!jsonText || jsonText === '{}') return showStatus("No JSON to copy!", "error");
+    navigator.clipboard.writeText(jsonText)
+        .then(() => showStatus("JSON copied to clipboard!", "success"))
+        .catch(err => showStatus("Copy failed: " + err, "error"));
+});
+
+// Copy links to clipboard
+document.getElementById('copyLinks').addEventListener('click', () => {
+    const selectedUrls = Array.from(document.querySelectorAll('#links input:checked')).map(i => i.value);
+    if(selectedUrls.length === 0) return showStatus("No links selected!", "error");
+    
+    const linksText = selectedUrls.join('\n');
+    navigator.clipboard.writeText(linksText)
+        .then(() => showStatus("Links copied to clipboard!", "success"))
+        .catch(err => showStatus("Copy failed: " + err, "error"));
+});
+
+// Select All / Deselect All buttons
+document.getElementById('selectAll').addEventListener('click', () => {
+    document.querySelectorAll('#links input').forEach(cb => cb.checked = true);
+    generateJSON();
+    updateCounts();
+});
+
+document.getElementById('deselectAll').addEventListener('click', () => {
+    document.querySelectorAll('#links input').forEach(cb => cb.checked = false);
+    generateJSON();
+    updateCounts();
+});
+
+// Show status message
+function showStatus(message, type) {
+    const statusEl = document.getElementById('statusMessage');
+    statusEl.textContent = message;
+    statusEl.className = `status ${type}`;
+    statusEl.style.display = 'block';
+    
+    // Auto-hide success messages after 3 seconds
+    if (type === 'success') {
+        setTimeout(() => {
+            statusEl.style.display = 'none';
+        }, 3000);
+    }
+}
+</script>
+</body>
+</html>
