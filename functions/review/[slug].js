@@ -23,11 +23,10 @@ export async function onRequest(context) {
         // Convert markdown to HTML first
         const htmlContent = convertMarkdownToHTML(content);
         
-        // Get related posts (with pre-computation strategy)
-        const relatedPosts = await getRelatedPosts(
+        // Get related posts (simplified version without file editing for now)
+        const relatedPosts = await getRelatedPostsSafe(
             frontmatter, 
             slug, 
-            content, 
             env.GITHUB_TOKEN
         );
 
@@ -54,18 +53,26 @@ export async function onRequest(context) {
     }
 }
 
-// ==================== PRE-COMPUTATION STRATEGY ====================
+// ==================== SAFE RELATED POSTS STRATEGY ====================
 
-async function getRelatedPosts(currentFrontmatter, currentSlug, currentContent, githubToken) {
-    // Check if related posts already exist in frontmatter
-    if (currentFrontmatter.related_posts && Array.isArray(currentFrontmatter.related_posts) && currentFrontmatter.related_posts.length > 0) {
-        console.log('✅ Using pre-computed related posts for:', currentSlug);
-        return convertRelatedSlugsToPosts(currentFrontmatter.related_posts);
+async function getRelatedPostsSafe(currentFrontmatter, currentSlug, githubToken) {
+    try {
+        // Check if related posts already exist in frontmatter
+        if (currentFrontmatter.related_posts && Array.isArray(currentFrontmatter.related_posts)) {
+            console.log('✅ Using manual related posts from frontmatter for:', currentSlug);
+            return convertRelatedSlugsToPosts(currentFrontmatter.related_posts);
+        }
+        
+        // Try to generate related posts (but don't edit files to avoid complexity)
+        console.log('🔄 Generating related posts for:', currentSlug);
+        const relatedPosts = await findRelatedPostsSimple(currentFrontmatter, currentSlug, githubToken);
+        
+        return relatedPosts;
+        
+    } catch (error) {
+        console.error('Error in getRelatedPostsSafe:', error);
+        return []; // Return empty array on error
     }
-    
-    // Generate related posts and update the MD file (first time only)
-    console.log('🔄 Generating related posts for first time:', currentSlug);
-    return await generateAndSaveRelatedPosts(currentFrontmatter, currentSlug, currentContent, githubToken);
 }
 
 function convertRelatedSlugsToPosts(relatedSlugs) {
@@ -78,122 +85,11 @@ function convertRelatedSlugsToPosts(relatedSlugs) {
     }));
 }
 
-async function generateAndSaveRelatedPosts(currentFrontmatter, currentSlug, currentContent, githubToken) {
+async function findRelatedPostsSimple(currentFrontmatter, currentSlug, githubToken) {
     try {
-        // Fetch related posts (this makes API calls, but only once per post)
-        const relatedPosts = await findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githubToken);
-        
-        if (relatedPosts.length > 0) {
-            // Update the MD file with related_posts in frontmatter
-            const success = await updateMarkdownFile(currentSlug, currentContent, relatedPosts, githubToken);
-            if (success) {
-                console.log('💾 Saved related posts to MD file for:', currentSlug);
-            }
-        }
-        
-        return relatedPosts;
-    } catch (error) {
-        console.error('Error generating related posts:', error);
-        return []; // Return empty array on error
-    }
-}
-
-async function updateMarkdownFile(slug, currentContent, relatedPosts, githubToken) {
-    const REPO_OWNER = 'yourfreetools';
-    const REPO_NAME = 'reviewindex';
-    const filePath = `content/reviews/${slug}.md`;
-    
-    try {
-        // 1. Get the current file details (SHA is required for updates)
-        const fileInfoResponse = await fetch(
-            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${filePath}`,
-            {
-                headers: {
-                    'Authorization': `token ${githubToken}`,
-                    'User-Agent': 'Review-Index-App',
-                    'Accept': 'application/vnd.github.v3+json'
-                }
-            }
-        );
-        
-        if (!fileInfoResponse.ok) {
-            console.error('Failed to get file info:', fileInfoResponse.status);
-            return false;
-        }
-        
-        const fileInfo = await fileInfoResponse.json();
-        
-        // 2. Parse and update the frontmatter
-        const { frontmatter, content: markdownContent } = parseMarkdown(currentContent);
-        
-        // Add related_posts to frontmatter
-        const relatedSlugs = relatedPosts.map(post => post.slug);
-        frontmatter.related_posts = relatedSlugs;
-        
-        // 3. Reconstruct the markdown with updated frontmatter
-        const updatedMarkdown = generateMarkdownWithFrontmatter(frontmatter, markdownContent);
-        
-        // 4. Encode content to base64
-        const contentBase64 = btoa(unescape(encodeURIComponent(updatedMarkdown)));
-        
-        // 5. Update the file on GitHub
-        const updateResponse = await fetch(
-            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${filePath}`,
-            {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `token ${githubToken}`,
-                    'User-Agent': 'Review-Index-App',
-                    'Accept': 'application/vnd.github.v3+json',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    message: `Auto-add related posts to ${slug}`,
-                    content: contentBase64,
-                    sha: fileInfo.sha // Required to update existing file
-                })
-            }
-        );
-        
-        if (updateResponse.ok) {
-            console.log('✅ Successfully updated MD file for:', slug);
-            return true;
-        } else {
-            const errorText = await updateResponse.text();
-            console.error('GitHub API error:', updateResponse.status, errorText);
-            return false;
-        }
-        
-    } catch (error) {
-        console.error('Error updating markdown file:', error);
-        return false;
-    }
-}
-
-function generateMarkdownWithFrontmatter(frontmatter, content) {
-    let frontmatterText = '---\n';
-    
-    for (const [key, value] of Object.entries(frontmatter)) {
-        if (Array.isArray(value)) {
-            if (value.length > 0) {
-                frontmatterText += `${key}: [${value.map(v => `"${v}"`).join(', ')}]\n`;
-            } else {
-                frontmatterText += `${key}: []\n`;
-            }
-        } else if (value !== null && value !== undefined) {
-            frontmatterText += `${key}: "${value.toString().replace(/"/g, '\\"')}"\n`;
-        }
-    }
-    
-    frontmatterText += '---\n\n';
-    return frontmatterText + content.trim();
-}
-
-async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githubToken) {
-    try {
-        // Only check 8 posts maximum for efficiency (reduces API calls)
-        const somePosts = await fetchSomePostsMetadata(githubToken, 8);
-        if (!somePosts || somePosts.length === 0) return [];
+        // Only check a few posts to avoid API limits
+        const somePosts = await fetchSomePostsMetadata(githubToken, 5);
+        if (!somePosts || somePosts.length === 0) return getFallbackRelatedPosts();
 
         const currentPostCategories = normalizeCategories(currentFrontmatter.categories);
         const related = [];
@@ -213,20 +109,45 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
                     categories: matchingCategories
                 });
                 
-                // Limit to 3 related posts to keep it clean
                 if (related.length >= 3) break;
             }
         }
 
+        // If no category matches found, return fallback
+        if (related.length === 0) {
+            return getFallbackRelatedPosts();
+        }
+
         console.log('📊 Found', related.length, 'related posts for:', currentSlug);
         return related;
+        
     } catch (error) {
         console.error('Error finding related posts:', error);
-        return [];
+        return getFallbackRelatedPosts();
     }
 }
 
-async function fetchSomePostsMetadata(githubToken, limit = 8) {
+function getFallbackRelatedPosts() {
+    // Return some generic related posts when no matches found
+    return [
+        {
+            title: "Popular Product Reviews",
+            slug: "popular-reviews",
+            description: "Check out our most popular product reviews and recommendations",
+            image: '/default-thumbnail.jpg',
+            categories: ['popular']
+        },
+        {
+            title: "Latest Reviews", 
+            slug: "latest-reviews", 
+            description: "Discover our newest product reviews and analysis",
+            image: '/default-thumbnail.jpg',
+            categories: ['latest']
+        }
+    ];
+}
+
+async function fetchSomePostsMetadata(githubToken, limit = 5) {
     const REPO_OWNER = 'yourfreetools';
     const REPO_NAME = 'reviewindex';
     
@@ -263,7 +184,7 @@ async function fetchSomePostsMetadata(githubToken, limit = 8) {
                     
                     if (contentResponse.status === 200) {
                         const content = await contentResponse.text();
-                        const firstLines = content.split('\n').slice(0, 12).join('\n');
+                        const firstLines = content.split('\n').slice(0, 10).join('\n');
                         const { frontmatter } = parseMarkdown(firstLines + '\n---\n');
                         
                         postsMetadata.push({
@@ -283,15 +204,15 @@ async function fetchSomePostsMetadata(githubToken, limit = 8) {
             return postsMetadata;
         } else {
             console.error('GitHub API error:', response.status);
-            return [];
+            return null;
         }
     } catch (error) {
         console.error('Error fetching posts metadata:', error);
-        return [];
+        return null;
     }
 }
 
-// ==================== EXISTING HELPER FUNCTIONS ====================
+// ==================== CORE HELPER FUNCTIONS ====================
 
 async function fetchPostContent(slug, githubToken) {
     const REPO_OWNER = 'yourfreetools';
@@ -312,8 +233,13 @@ async function fetchPostContent(slug, githubToken) {
 
         if (response.status === 200) {
             return await response.text();
+        } else if (response.status === 404) {
+            console.error('Post not found:', slug);
+            return null;
+        } else {
+            console.error('GitHub API error:', response.status);
+            return null;
         }
-        return null;
     } catch (error) {
         console.error('Error fetching post:', error);
         return null;
@@ -342,7 +268,7 @@ function parseMarkdown(content) {
                     } else if (value.startsWith("'") && value.endsWith("'")) {
                         value = value.substring(1, value.length - 1);
                     } else if (value.startsWith('[') && value.endsWith(']')) {
-                        // Handle array values like categories or related_posts
+                        // Handle array values
                         value = value.substring(1, value.length - 1).split(',').map(item => item.trim().replace(/"/g, ''));
                     }
                     
@@ -421,67 +347,20 @@ function convertMarkdownToHTML(markdown) {
         .replace(/<p>(<pre>.*?<\/pre>)<\/p>/gs, '$1');
 }
 
-function generateYouTubeEmbed(youtubeUrl, title) {
-    function getYouTubeId(url) {
-        const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
-        const match = url.match(regExp);
-        return (match && match[7].length === 11) ? match[7] : null;
-    }
+function normalizeCategories(categories) {
+    if (!categories) return [];
     
-    const videoId = getYouTubeId(youtubeUrl);
-    if (!videoId) return '';
+    let catsArray = Array.isArray(categories) ? categories : [categories];
     
-    return `
-    <section class="youtube-embed" aria-labelledby="video-title">
-        <h3 id="video-title">📺 Video Review</h3>
-        <div class="video-wrapper">
-            <iframe 
-                src="https://www.youtube.com/embed/${videoId}" 
-                title="Video review of ${escapeHtml(title)}"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                allowfullscreen
-                loading="lazy">
-            </iframe>
-        </div>
-        <p class="video-caption">Watch our detailed video review for a comprehensive overview</p>
-    </section>`;
+    return catsArray
+        .map(cat => cat.trim().toLowerCase())
+        .filter(cat => cat !== 'reviews' && cat !== 'review');
 }
 
-function generateSchemaMarkup(frontmatter, slug, url) {
-    const rating = parseInt(frontmatter.rating) || 4;
-    const productName = (frontmatter.title || formatSlug(slug))
-        .replace(/^Best /, '')
-        .replace(/ – Honest Review.*$/, '')
-        .trim();
-
-    return JSON.stringify({
-        "@context": "https://schema.org",
-        "@type": "Product",
-        "name": productName,
-        "description": frontmatter.description || 'Comprehensive product review and analysis',
-        "image": frontmatter.image || '',
-        "review": {
-            "@type": "Review",
-            "reviewRating": {
-                "@type": "Rating",
-                "ratingValue": rating.toString(),
-                "bestRating": "5"
-            },
-            "author": {
-                "@type": "Organization",
-                "name": "ReviewIndex"
-            },
-            "publisher": {
-                "@type": "Organization",
-                "name": "ReviewIndex"
-            }
-        },
-        "aggregateRating": {
-            "@type": "AggregateRating",
-            "ratingValue": rating.toString(),
-            "reviewCount": "1"
-        }
-    }, null, 2);
+function findMatchingCategories(currentCats, otherCats) {
+    return currentCats.filter(cat => 
+        otherCats.includes(cat)
+    );
 }
 
 function formatSlug(slug) {
@@ -500,52 +379,7 @@ function escapeHtml(unsafe) {
         .replace(/'/g, "&#039;");
 }
 
-function renderErrorPage(title, message) {
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>${title} - ReviewIndex</title>
-    <meta name="robots" content="noindex">
-    <style>
-        body { font-family: system-ui, sans-serif; text-align: center; padding: 2rem; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .error-container { background: white; padding: 3rem; border-radius: 12px; box-shadow: 0 8px 25px rgba(0,0,0,0.1); max-width: 500px; width: 100%; }
-        h1 { color: #dc2626; margin-bottom: 1rem; font-size: 2rem; }
-        p { color: #666; margin-bottom: 2rem; line-height: 1.6; }
-        a { color: #2563eb; text-decoration: none; font-weight: 600; padding: 0.75rem 1.5rem; border: 2px solid #2563eb; border-radius: 6px; transition: all 0.3s ease; }
-        a:hover { background: #2563eb; color: white; }
-    </style>
-</head>
-<body>
-    <div class="error-container">
-        <h1>⚠️ ${title}</h1>
-        <p>${message}</p>
-        <a href="/">← Return to Homepage</a>
-    </div>
-</body>
-</html>`;
-    
-    return new Response(html, { 
-        status: 404,
-        headers: { 'Content-Type': 'text/html' }
-    });
-}
-
-function normalizeCategories(categories) {
-    if (!categories) return [];
-    
-    let catsArray = Array.isArray(categories) ? categories : [categories];
-    
-    return catsArray
-        .map(cat => cat.trim().toLowerCase())
-        .filter(cat => cat !== 'reviews' && cat !== 'review');
-}
-
-function findMatchingCategories(currentCats, otherCats) {
-    return currentCats.filter(cat => 
-        otherCats.includes(cat)
-    );
-}
+// ==================== RENDER FUNCTIONS ====================
 
 async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relatedPosts = []) {
     const canonicalUrl = `https://reviewindex.pages.dev/review/${slug}`;
@@ -783,37 +617,45 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
             padding-bottom: 0.75rem;
             font-size: 1.8rem;
         }
+        
         .content h3 {
             margin: 2rem 0 1rem 0;
             color: #2d3748;
             font-size: 1.4rem;
         }
+        
         .content h4 {
             margin: 1.5rem 0 0.75rem 0;
             color: #4a5568;
             font-size: 1.2rem;
         }
+        
         .content p {
             margin-bottom: 1.5rem;
             font-size: 1.1rem;
             line-height: 1.7;
         }
+        
         .content ul, .content ol {
             margin: 1.5rem 0;
             padding-left: 2.5rem;
         }
+        
         .content li {
             margin-bottom: 0.75rem;
             line-height: 1.6;
         }
+        
         .content strong {
             font-weight: 600;
             color: #1a202c;
         }
+        
         .content em {
             font-style: italic;
             color: #4a5568;
         }
+        
         .content blockquote {
             border-left: 4px solid #2563eb;
             padding-left: 1.5rem;
@@ -824,6 +666,7 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
             padding: 1.5rem;
             border-radius: 0 8px 8px 0;
         }
+        
         .content code {
             background: #f1f5f9;
             padding: 0.2rem 0.4rem;
@@ -831,6 +674,7 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
             font-family: 'Courier New', monospace;
             font-size: 0.9em;
         }
+        
         .content pre {
             background: #1a202c;
             color: #e2e8f0;
@@ -839,6 +683,7 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
             overflow-x: auto;
             margin: 2rem 0;
         }
+        
         .content pre code {
             background: none;
             padding: 0;
@@ -847,26 +692,47 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
         
         /* Responsive design */
         @media (max-width: 768px) {
-            body { padding: 10px; }
-            .container { padding: 20px; }
-            .header h1 { font-size: 2rem; }
-            .content { font-size: 1rem; }
-            .youtube-embed { margin: 2rem 0; padding: 1.5rem; }
-            .related-item { flex-direction: column; text-align: center; }
-            .related-thumbnail { 
-                width: 120px; 
-                height: 120px; 
-                margin: 0 auto 1rem auto; 
+            body {
+                padding: 10px;
+            }
+            .container {
+                padding: 20px;
+            }
+            .header h1 {
+                font-size: 2rem;
+            }
+            .content {
+                font-size: 1rem;
+            }
+            .youtube-embed {
+                margin: 2rem 0;
+                padding: 1.5rem;
+            }
+            .related-item {
+                flex-direction: column;
+                text-align: center;
+            }
+            .related-thumbnail {
+                width: 120px;
+                height: 120px;
+                margin: 0 auto 1rem auto;
             }
         }
         
-        /* Animation */
+        /* Animation for better UX */
         .container {
             animation: fadeInUp 0.6s ease-out;
         }
+        
         @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
         /* Lazy loading */
@@ -918,50 +784,33 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
     </div>
     
     <script>
-        // Enhanced lazy loading with intersection observer
+        // Simple lazy loading
         document.addEventListener('DOMContentLoaded', function() {
-            // Lazy load images
-            const lazyImages = [].slice.call(document.querySelectorAll('img[loading="lazy"]'));
-            
-            if ('IntersectionObserver' in window) {
-                let lazyImageObserver = new IntersectionObserver(function(entries, observer) {
-                    entries.forEach(function(entry) {
-                        if (entry.isIntersecting) {
-                            let lazyImage = entry.target;
-                            lazyImage.src = lazyImage.dataset.src || lazyImage.src;
-                            lazyImage.classList.add('loaded');
-                            lazyImageObserver.unobserve(lazyImage);
-                        }
-                    });
-                });
-
-                lazyImages.forEach(function(lazyImage) {
-                    lazyImageObserver.observe(lazyImage);
-                });
-            } else {
-                // Fallback for older browsers
-                lazyImages.forEach(function(lazyImage) {
-                    lazyImage.src = lazyImage.dataset.src || lazyImage.src;
-                    lazyImage.classList.add('loaded');
-                });
-            }
-
-            // Smooth scrolling
+            // Add smooth scrolling for anchor links
             document.querySelectorAll('a[href^="#"]').forEach(anchor => {
                 anchor.addEventListener('click', function (e) {
                     e.preventDefault();
                     const target = document.querySelector(this.getAttribute('href'));
                     if (target) {
-                        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        target.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start'
+                        });
                     }
                 });
             });
             
-            // External links loading state
+            // Add loading state for external links
             document.querySelectorAll('a[target="_blank"]').forEach(link => {
                 link.addEventListener('click', function() {
                     this.style.opacity = '0.7';
                 });
+            });
+            
+            // Simple image lazy loading
+            const lazyImages = document.querySelectorAll('img[loading="lazy"]');
+            lazyImages.forEach(img => {
+                img.classList.add('loaded');
             });
         });
     </script>
@@ -979,9 +828,9 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
 <section class="related-posts" aria-labelledby="related-posts-title">
     <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 2.5rem; border-radius: 12px; margin: 3rem 0; border-left: 4px solid #0369a1;">
         <h2 id="related-posts-title" style="color: #0c4a6e; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
-            🔗 More ${displayCategory.charAt(0).toUpperCase() + displayCategory.slice(1)} Reviews
+            🔗 Related Reviews
         </h2>
-        <p style="color: #475569; margin-bottom: 1.5rem;">If you liked this review, you might also be interested in:</p>
+        <p style="color: #475569; margin-bottom: 1.5rem;">You might also be interested in:</p>
         
         <div class="related-grid">
             ${relatedPosts.map(post => `
@@ -1008,4 +857,134 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
         </div>
     </div>
 </section>`;
+}
+
+function generateYouTubeEmbed(youtubeUrl, title) {
+    function getYouTubeId(url) {
+        const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[7].length === 11) ? match[7] : null;
+    }
+    
+    const videoId = getYouTubeId(youtubeUrl);
+    if (!videoId) return '';
+    
+    return `
+    <section class="youtube-embed" aria-labelledby="video-title">
+        <h3 id="video-title">📺 Video Review</h3>
+        <div class="video-wrapper">
+            <iframe 
+                src="https://www.youtube.com/embed/${videoId}" 
+                title="Video review of ${escapeHtml(title)}"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                allowfullscreen
+                loading="lazy">
+            </iframe>
+        </div>
+        <p class="video-caption">Watch our detailed video review for a comprehensive overview</p>
+    </section>`;
+}
+
+function generateSchemaMarkup(frontmatter, slug, url) {
+    const rating = parseInt(frontmatter.rating) || 4;
+    const productName = (frontmatter.title || formatSlug(slug))
+        .replace(/^Best /, '')
+        .replace(/ – Honest Review.*$/, '')
+        .trim();
+
+    return JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": productName,
+        "description": frontmatter.description || 'Comprehensive product review and analysis',
+        "image": frontmatter.image || '',
+        "review": {
+            "@type": "Review",
+            "reviewRating": {
+                "@type": "Rating",
+                "ratingValue": rating.toString(),
+                "bestRating": "5"
+            },
+            "author": {
+                "@type": "Organization",
+                "name": "ReviewIndex"
+            },
+            "publisher": {
+                "@type": "Organization",
+                "name": "ReviewIndex"
+            }
+        },
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": rating.toString(),
+            "reviewCount": "1"
+        }
+    }, null, 2);
+}
+
+function renderErrorPage(title, message) {
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>${title} - ReviewIndex</title>
+    <meta name="robots" content="noindex">
+    <style>
+        body { 
+            font-family: system-ui, sans-serif; 
+            text-align: center; 
+            padding: 2rem; 
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .error-container { 
+            background: white; 
+            padding: 3rem; 
+            border-radius: 12px; 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 { 
+            color: #dc2626; 
+            margin-bottom: 1rem;
+            font-size: 2rem;
+        }
+        p {
+            color: #666;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+        a { 
+            color: #2563eb; 
+            text-decoration: none;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border: 2px solid #2563eb;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        a:hover {
+            background: #2563eb;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <h1>⚠️ ${title}</h1>
+        <p>${message}</p>
+        <a href="/">← Return to Homepage</a>
+    </div>
+</body>
+</html>`;
+    
+    return new Response(html, { 
+        status: 404,
+        headers: { 'Content-Type': 'text/html' }
+    });
             }
