@@ -40,22 +40,36 @@ export async function onRequest(context) {
       const fresh = await findRelatedPostsFromGitHub(frontmatter, slug, env.GITHUB_TOKEN);
       relatedPosts = (fresh || []).slice(0, 3); // up to 3
 
-      // save full objects into frontmatter and mark checked: true
-      frontmatter.related = relatedPosts.map(p => ({
-        slug: p.slug,
-        title: p.title,
-        description: p.description || '',
-        image: p.image || '/default-thumbnail.jpg',
-        categories: p.categories || []
-      }));
-      frontmatter.checked = true;
+      // Only save if we have related posts
+      if (relatedPosts.length > 0) {
+        // save full objects into frontmatter and mark checked: true
+        frontmatter.related = relatedPosts.map(p => ({
+          slug: p.slug,
+          title: p.title,
+          description: p.description || '',
+          image: p.image || '/default-thumbnail.jpg',
+          categories: p.categories || []
+        }));
+        frontmatter.checked = true;
 
-      // attempt write back to GitHub (do not block render on failure)
-      try {
-        await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
-        console.log(`✅ Wrote related posts into ${slug}.md`);
-      } catch (err) {
-        console.error('Failed to write related posts to GitHub:', err);
+        // attempt write back to GitHub (do not block render on failure)
+        try {
+          await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
+          console.log(`✅ Wrote related posts into ${slug}.md`);
+        } catch (err) {
+          console.error('Failed to write related posts to GitHub:', err);
+        }
+      } else {
+        // No related posts found, just mark as checked to avoid recomputation
+        frontmatter.checked = true;
+        frontmatter.related = [];
+        
+        try {
+          await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
+          console.log(`✅ Marked ${slug}.md as checked (no related posts found)`);
+        } catch (err) {
+          console.error('Failed to update file:', err);
+        }
       }
     }
 
@@ -352,14 +366,17 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
     for (const p of all) {
       if (!p || !p.slug) continue;
       if (p.slug === currentSlug) continue;
+      
       const pcats = normalizeCategories(p.categories || []);
       const matches = currentCats.filter(c => pcats.includes(c));
+      
+      // Only include if there are matching categories
       if (matches.length > 0) {
         related.push({
           title: p.title || formatSlug(p.slug),
           slug: p.slug,
           description: p.description || '',
-          image: p.image || '/default-thumbnail.jpg',
+          image: p.image || '/default-thumbnail.jpg', // Use actual image from frontmatter
           categories: matches,
           matchCount: matches.length
         });
@@ -404,7 +421,7 @@ async function fetchAllPostsMetadata(githubToken) {
             slug: f.name.replace('.md', ''),
             title: frontmatter.title,
             description: frontmatter.description,
-            image: frontmatter.image,
+            image: frontmatter.image, // Store actual image URL
             categories: frontmatter.categories
           });
         }
@@ -537,7 +554,6 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
   const youtubeEmbed = frontmatter.youtubeId ? generateYouTubeEmbed(frontmatter.youtubeId, frontmatter.title || formatSlug(slug)) : '';
   const relatedPostsHTML = generateRelatedPostsHTML(relatedPosts, frontmatter.categories);
 
-  // big HTML template preserved (kept concise here)
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -561,21 +577,80 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
 <meta name="twitter:image:alt" content="${escapeHtml(frontmatter.title || formatSlug(slug))} product review">
 <script type="application/ld+json">${JSON.stringify(schemaMarkup)}</script>
 <style>
-  /* (your styles here — kept compact to save space) */
-  body{font-family:system-ui,Segoe UI,Arial;background:#f5f5f5;color:#333;padding:20px}
-  .container{max-width:800px;margin:0 auto;background:#fff;padding:32px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.08)}
-  .header h1{font-size:2rem;margin-bottom:.5rem}
-  .meta-info{background:linear-gradient(135deg,#f8fafc,#e2e8f0);padding:1rem;border-radius:8px;margin:1rem 0}
-  .content img.content-image{max-width:100%;height:auto;border-radius:8px}
-  .related-item{display:flex;gap:12px;align-items:flex-start;text-decoration:none;color:inherit;padding:12px;border-radius:8px;border:1px solid #e6eef9}
-  .related-thumbnail img{width:100px;height:100px;object-fit:cover;border-radius:8px}
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #f5f5f5; color: #333; line-height: 1.6; padding: 20px; }
+  .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 32px; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
+  .header h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #1a202c; }
+  .meta-info { background: linear-gradient(135deg, #f8fafc, #e2e8f0); padding: 1rem; border-radius: 8px; margin: 1rem 0; font-size: 0.9rem; }
+  .rating { color: #f59e0b; font-size: 1.2rem; margin: 0.5rem 0; }
+  .content { margin: 2rem 0; }
+  .content img.content-image { max-width: 100%; height: auto; border-radius: 8px; margin: 1rem 0; }
+  .content h2 { font-size: 1.5rem; margin: 1.5rem 0 1rem 0; color: #2d3748; }
+  .content h3 { font-size: 1.25rem; margin: 1.25rem 0 0.75rem 0; color: #4a5568; }
+  .content p { margin-bottom: 1rem; }
+  .content ul, .content ol { margin: 1rem 0 1rem 2rem; }
+  .content li { margin-bottom: 0.5rem; }
+  .content blockquote { border-left: 4px solid #e2e8f0; padding-left: 1rem; margin: 1rem 0; color: #4a5568; }
+  .content pre { background: #f7fafc; padding: 1rem; border-radius: 6px; overflow-x: auto; margin: 1rem 0; }
+  .content code { background: #f7fafc; padding: 0.2rem 0.4rem; border-radius: 3px; font-size: 0.9em; }
+  
+  /* YouTube Embed Styles */
+  .youtube-embed { margin: 2rem 0; }
+  .youtube-embed h3 { font-size: 1.3rem; margin-bottom: 1rem; color: #2d3748; }
+  .video-wrapper { position: relative; width: 100%; height: 0; padding-bottom: 56.25%; margin: 1rem 0; }
+  .video-wrapper iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 8px; border: none; }
+  .video-caption { text-align: center; color: #718096; font-size: 0.9rem; margin-top: 0.5rem; }
+  
+  /* Related Posts Styles */
+  .related-posts { margin: 2rem 0; }
+  .related-posts h2 { font-size: 1.5rem; margin-bottom: 1rem; color: #2d3748; }
+  .related-grid { display: grid; gap: 16px; }
+  .related-item { display: flex; gap: 16px; align-items: flex-start; text-decoration: none; color: inherit; padding: 16px; border-radius: 8px; border: 1px solid #e6eef9; transition: all 0.3s ease; background: #fafbfc; }
+  .related-item:hover { border-color: #2563eb; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1); transform: translateY(-2px); }
+  .related-thumbnail { flex-shrink: 0; }
+  .related-thumbnail img { width: 100px; height: 100px; object-fit: cover; border-radius: 6px; }
+  .related-content h3 { font-size: 1.1rem; margin: 0 0 0.5rem 0; color: #2d3748; }
+  .related-content p { color: #666; font-size: 0.9rem; margin: 0.25rem 0; line-height: 1.4; }
+  .category-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.5rem; }
+  .category-tag { display: inline-block; background: #eef6ff; color: #034a86; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
+  
+  /* Affiliate Link Styles */
+  .affiliate-section { background: linear-gradient(135deg, #fff7ed, #fed7aa); padding: 1.5rem; border-radius: 8px; margin: 2rem 0; text-align: center; border: 1px solid #fdba74; }
+  .affiliate-section p { margin-bottom: 1rem; color: #7c2d12; font-weight: 500; }
+  .affiliate-button { display: inline-block; background: #2563eb; color: #fff; padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2); }
+  .affiliate-button:hover { background: #1d4ed8; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3); }
+  
+  /* Back Link */
+  .back-nav { text-align: center; margin-top: 2rem; }
+  .back-link { display: inline-block; padding: 0.75rem 1.5rem; border: 2px solid #2563eb; border-radius: 8px; text-decoration: none; color: #2563eb; font-weight: 500; transition: all 0.3s ease; }
+  .back-link:hover { background: #2563eb; color: #fff; }
+  
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    body { padding: 10px; }
+    .container { padding: 20px; }
+    .header h1 { font-size: 1.75rem; }
+    .related-item { flex-direction: column; text-align: center; }
+    .related-thumbnail img { width: 100%; height: 150px; }
+    .meta-info { font-size: 0.8rem; }
+  }
+  
+  @media (max-width: 480px) {
+    .container { padding: 16px; }
+    .header h1 { font-size: 1.5rem; }
+    .content h2 { font-size: 1.3rem; }
+    .content h3 { font-size: 1.1rem; }
+    .affiliate-section { padding: 1rem; }
+    .affiliate-button { padding: 1rem 1.5rem; width: 100%; }
+  }
 </style>
 </head>
 <body>
   <div class="container">
-    <header class="header"><h1>${escapeHtml(frontmatter.title || formatSlug(slug))}</h1>
+    <header class="header">
+      <h1>${escapeHtml(frontmatter.title || formatSlug(slug))}</h1>
       ${frontmatter.rating ? `<div class="rating" aria-label="Rating: ${frontmatter.rating}">${'⭐'.repeat(parseInt(frontmatter.rating))} ${frontmatter.rating}/5</div>` : ''}
-      ${frontmatter.description ? `<p style="color:#555">${escapeHtml(frontmatter.description)}</p>` : ''}
+      ${frontmatter.description ? `<p style="color:#555; font-size:1.1rem;">${escapeHtml(frontmatter.description)}</p>` : ''}
     </header>
 
     <div class="meta-info">
@@ -590,9 +665,17 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
 
     ${relatedPostsHTML}
 
-    ${frontmatter.affiliateLink ? `<aside style="background:linear-gradient(135deg,#fff7ed,#fed7aa);padding:1rem;border-radius:8px;margin-top:1.5rem"><a href="${escapeHtml(frontmatter.affiliateLink)}" target="_blank" rel="nofollow sponsored" style="background:#2563eb;color:#fff;padding:.75rem 1rem;border-radius:8px;text-decoration:none">Check Current Price</a></aside>` : ''}
+    ${frontmatter.affiliateLink ? `
+    <aside class="affiliate-section">
+      <p>💡 <strong>Ready to try ${escapeHtml(frontmatter.title || formatSlug(slug))}?</strong> Check the current price and see if it's right for you!</p>
+      <a href="${escapeHtml(frontmatter.affiliateLink)}" target="_blank" rel="nofollow sponsored" class="affiliate-button">
+        Check Current Price → 
+      </a>
+    </aside>` : ''}
 
-    <nav style="text-align:center;margin-top:1.5rem"><a href="/" style="display:inline-block;padding:.5rem 1rem;border:2px solid #2563eb;border-radius:6px;text-decoration:none;color:#2563eb">← Back to All Reviews</a></nav>
+    <nav class="back-nav">
+      <a href="/" class="back-link">← Back to All Reviews</a>
+    </nav>
   </div>
 </body>
 </html>`;
@@ -600,21 +683,34 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
 
 function generateRelatedPostsHTML(relatedPosts, currentCategories) {
   if (!relatedPosts || relatedPosts.length === 0) return '';
-  const displayCategory = (normalizeCategories(currentCategories || [])[0] || 'related');
-  return `<section class="related-posts" aria-labelledby="related-posts-title" style="margin-top:2rem">
-    <h2 id="related-posts-title">🔗 More ${escapeHtml(displayCategory.charAt(0).toUpperCase() + displayCategory.slice(1))} Reviews</h2>
-    <div style="display:grid;gap:12px;margin-top:12px">
+  
+  return `<section class="related-posts" aria-labelledby="related-posts-title">
+    <h2 id="related-posts-title">🔗 Related Reviews</h2>
+    <div class="related-grid">
       ${relatedPosts.map(p => `
         <a class="related-item" href="/review/${encodeURIComponent(p.slug)}" aria-label="${escapeHtml(p.title)}">
-          <div class="related-thumbnail"><img src="${escapeHtml(p.image || '/default-thumbnail.jpg')}" alt="${escapeHtml(p.title)}"></div>
-          <div>
-            <h3 style="margin:0">${escapeHtml(p.title)}</h3>
-            ${p.description ? `<p style="margin:.25rem 0;color:#666">${escapeHtml(p.description)}</p>` : ''}
-            ${(p.categories || []).map(c => `<span style="display:inline-block;background:#eef6ff;color:#034a86;padding:.15rem .4rem;border-radius:4px;margin-right:.25rem;font-size:.8rem">${escapeHtml(c)}</span>`).join('')}
+          <div class="related-thumbnail">
+            <img src="${escapeHtml(p.image || '/default-thumbnail.jpg')}" alt="${escapeHtml(p.title)}" loading="lazy">
+          </div>
+          <div class="related-content">
+            <h3>${escapeHtml(p.title)}</h3>
+            ${p.description ? `<p>${escapeHtml(p.description)}</p>` : ''}
+            <div class="category-tags">
+              ${(p.categories || []).map(c => `<span class="category-tag">${escapeHtml(c)}</span>`).join('')}
+            </div>
           </div>
         </a>`).join('')}
     </div>
   </section>`;
+}
+
+function renderErrorPage(title, message) {
+  const html = `<!DOCTYPE html>
+<html>
+<head><title>${title}</title><meta charset="UTF-8"><style>body{font-family:system-ui;background:#f5f5f5;padding:40px;text-align:center;} .container{max-width:600px;margin:0 auto;background:#fff;padding:40px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.08);} h1{color:#dc2626;} a{color:#2563eb;text-decoration:none;}</style></head>
+<body><div class="container"><h1>${title}</h1><p>${message}</p><p><a href="/">← Back to homepage</a></p></div></body>
+</html>`;
+  return new Response(html, { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
 
@@ -622,8 +718,8 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
 
 function normalizeCategories(categories) {
   if (!categories) return [];
-  if (Array.isArray(categories)) return categories.map(c => String(c).toLowerCase());
-  return [String(categories).toLowerCase()];
+  if (Array.isArray(categories)) return categories.map(c => String(c).toLowerCase().trim());
+  return [String(categories).toLowerCase().trim()];
 }
 
 /* end of file */
