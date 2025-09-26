@@ -1,14 +1,5 @@
 ---
-title: "Borghese Fango Mud Mask 2025 - Honest Review"
-description: "Comprehensive review of Borghese Fango Mud Mask covering its features, performance, and value proposition for skincare enthusiasts."
-image: "https://assets.dmagstatic.com/wp-content/uploads/2025/01/borghese-mud-mask-fango-.webp"
-rating: 4
-affiliateLink: "https://amzn.to/428CO8L"
-youtubeId: ""
-categories: ["reviews", "beauty", "skincare"]
-date: "2025-09-26T09:02:32.894Z"
-slug: "borghese-fango-mud-mask-2025-honest-review"
-draft: false
+related_posts: ["popular-reviews", "latest-reviews"]
 ---
 
 # Borghese Fango Mud Mask 2025 - Honest Review
