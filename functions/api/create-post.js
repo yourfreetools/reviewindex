@@ -61,8 +61,8 @@ export async function onRequestPost(context) {
             rating,
             affiliateLink: affiliateLink?.trim(),
             youtubeLink: youtubeLink?.trim(),
-            keyFeatures: keyFeatures?.trim(), // NEW FIELD
-            finalVerdict: finalVerdict?.trim(), // NEW FIELD
+            keyFeatures: keyFeatures?.trim(),
+            finalVerdict: finalVerdict?.trim(),
             pros: pros?.trim(),
             cons: cons?.trim(),
             categories: categories?.trim()
@@ -125,6 +125,11 @@ function generateSEOMarkdown(data) {
         data.categories.split(',').map(c => c.trim()).filter(c => c) : 
         ['reviews'];
 
+    // Affiliate link appears at the top
+    const affiliateMarkdown = data.affiliateLink ? `
+[Check Price on Amazon](${data.affiliateLink})
+` : '';
+
     return `---
 title: "${data.title.replace(/"/g, '\\"')}"
 description: "${(data.description || `Comprehensive review of ${data.title}`).replace(/"/g, '\\"').substring(0, 160)}"
@@ -143,6 +148,8 @@ draft: false
 ${data.image ? `![${data.title}](${data.image})` : ''}
 
 ${data.description ? ` ${data.description}` : ''}
+
+${affiliateMarkdown}  <!-- Affiliate link inserted at the top -->
 
 ${data.content || '## Introduction\n\nStart your comprehensive review here...'}
 
@@ -167,12 +174,6 @@ ${consList}
 ## Final Rating: ${data.rating || 5}/5 ⭐
 
 ${data.finalVerdict || '*Your final verdict and recommendation*'}
-
-${data.affiliateLink ? `
-## Where to Buy
-
-[Check Price on Amazon](${data.affiliateLink})
-` : ''}
 
 ---
 
@@ -226,4 +227,4 @@ async function publishToGitHub({ token, content, title, filename }) {
         path: filePath,
         siteUrl: `https://reviewindex.pages.dev/review/${filename.replace('.md', '')}`
     };
-                                                                                                             }
+}
