@@ -5,7 +5,7 @@ image: "https://i.ytimg.com/vi/KhMb0-t2MyU/maxresdefault.jpg"
 rating: 4
 affiliateLink: ""
 youtubeId: ""
-categories: ["reviews", "electronics", "smartphones", "minimalism"]
+categories: ["reviews", "electronics", "smartphones"]
 date: "2025-09-26T14:35:40.448Z"
 slug: "light-phone-iii-2025-honest-review"
 draft: false
