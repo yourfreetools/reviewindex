@@ -18,22 +18,22 @@ export async function onRequest(context) {
         }
 
         // Parse current post frontmatter
-        const { frontmatter: currentFrontmatter, content } = parseMarkdown(postContent);
+        const { frontmatter, content } = parseMarkdown(postContent);
         
         // Convert markdown to HTML first
         const htmlContent = convertMarkdownToHTML(content);
         
-        // Get related posts WITH CACHING
-        const relatedPosts = await findRelatedPostsWithCache(
-            currentFrontmatter, 
+        // Get related posts (with pre-computation strategy)
+        const relatedPosts = await getRelatedPosts(
+            frontmatter, 
             slug, 
-            env.GITHUB_TOKEN,
-            env.RELATED_POSTS  // KV namespace
+            content, 
+            env.GITHUB_TOKEN
         );
 
         // Render the post page
         const fullHtml = await renderPostPage(
-            currentFrontmatter,
+            frontmatter,
             htmlContent, 
             slug, 
             request.url, 
@@ -54,59 +54,152 @@ export async function onRequest(context) {
     }
 }
 
-// ==================== CACHED RELATED POSTS ====================
+// ==================== PRE-COMPUTATION STRATEGY ====================
 
-async function findRelatedPostsWithCache(currentFrontmatter, currentSlug, githubToken, kvNamespace) {
-    const cacheKey = `related-${currentSlug}`;
+async function getRelatedPosts(currentFrontmatter, currentSlug, currentContent, githubToken) {
+    // Check if related posts already exist in frontmatter
+    if (currentFrontmatter.related_posts && Array.isArray(currentFrontmatter.related_posts) && currentFrontmatter.related_posts.length > 0) {
+        console.log('✅ Using pre-computed related posts for:', currentSlug);
+        return convertRelatedSlugsToPosts(currentFrontmatter.related_posts);
+    }
     
+    // Generate related posts and update the MD file (first time only)
+    console.log('🔄 Generating related posts for first time:', currentSlug);
+    return await generateAndSaveRelatedPosts(currentFrontmatter, currentSlug, currentContent, githubToken);
+}
+
+function convertRelatedSlugsToPosts(relatedSlugs) {
+    return relatedSlugs.map(slug => ({
+        title: formatSlug(slug),
+        slug: slug,
+        description: `Related review: ${formatSlug(slug)}`,
+        image: '/default-thumbnail.jpg',
+        categories: ['related']
+    }));
+}
+
+async function generateAndSaveRelatedPosts(currentFrontmatter, currentSlug, currentContent, githubToken) {
     try {
-        // 1. CHECK CACHE FIRST
-        const cached = await kvNamespace?.get(cacheKey);
+        // Fetch related posts (this makes API calls, but only once per post)
+        const relatedPosts = await findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githubToken);
         
-        if (cached) {
-            console.log('✅ Cache HIT for:', currentSlug);
-            return JSON.parse(cached);
-        }
-        
-        console.log('🔄 Cache MISS for:', currentSlug, '- Fetching from GitHub...');
-        
-        // 2. FETCH FRESH DATA FROM GITHUB
-        const relatedPosts = await findRelatedPostsFromGitHub(
-            currentFrontmatter, 
-            currentSlug, 
-            githubToken
-        );
-        
-        // 3. STORE IN CACHE (24 HOURS) - only if KV exists
-        if (relatedPosts.length > 0 && kvNamespace) {
-            await kvNamespace.put(
-                cacheKey, 
-                JSON.stringify(relatedPosts), 
-                { expirationTtl: 86400 } // 24 hours
-            );
-            console.log('💾 Cached', relatedPosts.length, 'related posts for:', currentSlug);
+        if (relatedPosts.length > 0) {
+            // Update the MD file with related_posts in frontmatter
+            const success = await updateMarkdownFile(currentSlug, currentContent, relatedPosts, githubToken);
+            if (success) {
+                console.log('💾 Saved related posts to MD file for:', currentSlug);
+            }
         }
         
         return relatedPosts;
-        
     } catch (error) {
-        console.error('❌ Cache error for', currentSlug, ':', error);
+        console.error('Error generating related posts:', error);
         return []; // Return empty array on error
     }
 }
 
+async function updateMarkdownFile(slug, currentContent, relatedPosts, githubToken) {
+    const REPO_OWNER = 'yourfreetools';
+    const REPO_NAME = 'reviewindex';
+    const filePath = `content/reviews/${slug}.md`;
+    
+    try {
+        // 1. Get the current file details (SHA is required for updates)
+        const fileInfoResponse = await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${filePath}`,
+            {
+                headers: {
+                    'Authorization': `token ${githubToken}`,
+                    'User-Agent': 'Review-Index-App',
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            }
+        );
+        
+        if (!fileInfoResponse.ok) {
+            console.error('Failed to get file info:', fileInfoResponse.status);
+            return false;
+        }
+        
+        const fileInfo = await fileInfoResponse.json();
+        
+        // 2. Parse and update the frontmatter
+        const { frontmatter, content: markdownContent } = parseMarkdown(currentContent);
+        
+        // Add related_posts to frontmatter
+        const relatedSlugs = relatedPosts.map(post => post.slug);
+        frontmatter.related_posts = relatedSlugs;
+        
+        // 3. Reconstruct the markdown with updated frontmatter
+        const updatedMarkdown = generateMarkdownWithFrontmatter(frontmatter, markdownContent);
+        
+        // 4. Encode content to base64
+        const contentBase64 = btoa(unescape(encodeURIComponent(updatedMarkdown)));
+        
+        // 5. Update the file on GitHub
+        const updateResponse = await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${filePath}`,
+            {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `token ${githubToken}`,
+                    'User-Agent': 'Review-Index-App',
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: `Auto-add related posts to ${slug}`,
+                    content: contentBase64,
+                    sha: fileInfo.sha // Required to update existing file
+                })
+            }
+        );
+        
+        if (updateResponse.ok) {
+            console.log('✅ Successfully updated MD file for:', slug);
+            return true;
+        } else {
+            const errorText = await updateResponse.text();
+            console.error('GitHub API error:', updateResponse.status, errorText);
+            return false;
+        }
+        
+    } catch (error) {
+        console.error('Error updating markdown file:', error);
+        return false;
+    }
+}
+
+function generateMarkdownWithFrontmatter(frontmatter, content) {
+    let frontmatterText = '---\n';
+    
+    for (const [key, value] of Object.entries(frontmatter)) {
+        if (Array.isArray(value)) {
+            if (value.length > 0) {
+                frontmatterText += `${key}: [${value.map(v => `"${v}"`).join(', ')}]\n`;
+            } else {
+                frontmatterText += `${key}: []\n`;
+            }
+        } else if (value !== null && value !== undefined) {
+            frontmatterText += `${key}: "${value.toString().replace(/"/g, '\\"')}"\n`;
+        }
+    }
+    
+    frontmatterText += '---\n\n';
+    return frontmatterText + content.trim();
+}
+
 async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githubToken) {
     try {
-        // Get all posts metadata
-        const allPosts = await fetchAllPostsMetadata(githubToken);
-        if (!allPosts || allPosts.length === 0) return [];
+        // Only check 8 posts maximum for efficiency (reduces API calls)
+        const somePosts = await fetchSomePostsMetadata(githubToken, 8);
+        if (!somePosts || somePosts.length === 0) return [];
 
         const currentPostCategories = normalizeCategories(currentFrontmatter.categories);
         const related = [];
 
-        // Check each post for category matches
-        for (const post of allPosts) {
-            if (post.slug === currentSlug) continue; // Skip current post
+        for (const post of somePosts) {
+            if (post.slug === currentSlug) continue;
             
             const postCategories = normalizeCategories(post.categories);
             const matchingCategories = findMatchingCategories(currentPostCategories, postCategories);
@@ -115,27 +208,25 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
                 related.push({
                     title: post.title || formatSlug(post.slug),
                     slug: post.slug,
-                    description: post.description || '',
+                    description: post.description || `Read our review of ${formatSlug(post.slug)}`,
                     image: post.image || '/default-thumbnail.jpg',
-                    categories: matchingCategories,
-                    matchCount: matchingCategories.length
+                    categories: matchingCategories
                 });
                 
-                // Limit to 4 related posts
-                if (related.length >= 4) break;
+                // Limit to 3 related posts to keep it clean
+                if (related.length >= 3) break;
             }
         }
 
         console.log('📊 Found', related.length, 'related posts for:', currentSlug);
         return related;
-
     } catch (error) {
-        console.error('Error fetching related posts from GitHub:', error);
+        console.error('Error finding related posts:', error);
         return [];
     }
 }
 
-async function fetchAllPostsMetadata(githubToken) {
+async function fetchSomePostsMetadata(githubToken, limit = 8) {
     const REPO_OWNER = 'yourfreetools';
     const REPO_NAME = 'reviewindex';
     
@@ -153,12 +244,11 @@ async function fetchAllPostsMetadata(githubToken) {
 
         if (response.status === 200) {
             const files = await response.json();
-            const markdownFiles = files.filter(file => file.name.endsWith('.md'));
+            const markdownFiles = files.filter(file => file.name.endsWith('.md')).slice(0, limit);
             
             const postsMetadata = [];
             
-            // Fetch metadata for each file (limit to 20 for performance)
-            for (const file of markdownFiles.slice(0, 20)) {
+            for (const file of markdownFiles) {
                 try {
                     const slug = file.name.replace('.md', '');
                     const contentResponse = await fetch(
@@ -166,7 +256,6 @@ async function fetchAllPostsMetadata(githubToken) {
                         {
                             headers: {
                                 'Authorization': `token ${githubToken}`,
-                                'User-Agent': 'Review-Index-App',
                                 'Accept': 'application/vnd.github.v3.raw'
                             }
                         }
@@ -174,8 +263,7 @@ async function fetchAllPostsMetadata(githubToken) {
                     
                     if (contentResponse.status === 200) {
                         const content = await contentResponse.text();
-                        // Only parse the first 15 lines for performance
-                        const firstLines = content.split('\n').slice(0, 15).join('\n');
+                        const firstLines = content.split('\n').slice(0, 12).join('\n');
                         const { frontmatter } = parseMarkdown(firstLines + '\n---\n');
                         
                         postsMetadata.push({
@@ -193,10 +281,10 @@ async function fetchAllPostsMetadata(githubToken) {
             }
             
             return postsMetadata;
+        } else {
+            console.error('GitHub API error:', response.status);
+            return [];
         }
-        
-        return [];
-        
     } catch (error) {
         console.error('Error fetching posts metadata:', error);
         return [];
@@ -248,11 +336,13 @@ function parseMarkdown(content) {
                     const key = line.substring(0, colon).trim();
                     let value = line.substring(colon + 1).trim();
                     
+                    // Remove quotes
                     if (value.startsWith('"') && value.endsWith('"')) {
                         value = value.substring(1, value.length - 1);
                     } else if (value.startsWith("'") && value.endsWith("'")) {
                         value = value.substring(1, value.length - 1);
                     } else if (value.startsWith('[') && value.endsWith(']')) {
+                        // Handle array values like categories or related_posts
                         value = value.substring(1, value.length - 1).split(',').map(item => item.trim().replace(/"/g, ''));
                     }
                     
