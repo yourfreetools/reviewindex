@@ -14,61 +14,52 @@ export async function onRequestPost(context) {
     }
 
     try {
-        console.log('🚀 Starting SEO review publication process...');
-
         const { GITHUB_TOKEN } = context.env;
-        
         if (!GITHUB_TOKEN) {
             return errorResponse('GITHUB_TOKEN not configured', 500, corsHeaders);
         }
 
         const formData = await context.request.json();
-        
-        // Enhanced validation
         const { 
             title, 
             description, 
             content, 
             image, 
             filename, 
-            rating = '4',
+            rating, 
             affiliateLink, 
             youtubeLink, 
-            keyFeatures, // NEW FIELD
-            finalVerdict, // NEW FIELD
+            categories, 
+            keyFeatures, 
+            finalVerdict, 
             pros, 
-            cons, 
-            categories 
+            cons 
         } = formData;
 
-        // Validate required fields
         if (!title?.trim() || !filename?.trim()) {
             return errorResponse('Title and Filename are required', 400, corsHeaders);
         }
 
-        // Validate filename format
         if (!filename.match(/^[a-z0-9-]+$/i)) {
             return errorResponse('Filename can only contain letters, numbers, and hyphens', 400, corsHeaders);
         }
 
-        // Generate SEO content
         const markdownContent = generateSEOMarkdown({
             title: title.trim(),
             description: description?.trim(),
             content: content?.trim(),
             image: image?.trim(),
             filename: filename.trim(),
-            rating,
+            rating: rating || 5,
             affiliateLink: affiliateLink?.trim(),
             youtubeLink: youtubeLink?.trim(),
+            categories: categories?.trim(),
             keyFeatures: keyFeatures?.trim(),
             finalVerdict: finalVerdict?.trim(),
             pros: pros?.trim(),
-            cons: cons?.trim(),
-            categories: categories?.trim()
+            cons: cons?.trim()
         });
 
-        // Publish to GitHub
         const result = await publishToGitHub({
             token: GITHUB_TOKEN,
             content: markdownContent,
@@ -84,51 +75,26 @@ export async function onRequestPost(context) {
     }
 }
 
-// Helper functions
+// Helpers
 function errorResponse(message, status = 500, headers) {
-    return new Response(JSON.stringify({ 
-        success: false, 
-        message 
-    }), {
-        status,
-        headers: { 
-            ...headers, 
-            'Content-Type': 'application/json' 
-        },
-    });
+    return new Response(JSON.stringify({ success: false, message }), { status, headers: { ...headers, 'Content-Type': 'application/json' } });
 }
 
 function successResponse(data, headers) {
-    return new Response(JSON.stringify({ 
-        success: true, 
-        message: '🎉 SEO-optimized review published successfully!',
-        data 
-    }), {
-        status: 200,
-        headers: { 
-            ...headers, 
-            'Content-Type': 'application/json' 
-        },
-    });
+    return new Response(JSON.stringify({ success: true, message: '🎉 SEO-optimized review published successfully!', data }), { status: 200, headers: { ...headers, 'Content-Type': 'application/json' } });
 }
 
+// Markdown generator (Neutrogena style, affiliateLink only in frontmatter)
 function generateSEOMarkdown(data) {
     const currentDate = new Date().toISOString();
     const formattedDate = currentDate.split('T')[0];
-    const seoSlug = generateSlug(data.title);
+    const slug = generateSlug(data.title);
 
-    // Generate lists
+    const categoryList = data.categories ? data.categories.split(',').map(c => `"${c.trim()}"`) : ["reviews"];
+
     const keyFeaturesList = data.keyFeatures?.split('\n').filter(f => f.trim()).map(f => `- ${f.trim()}`).join('\n');
     const prosList = data.pros?.split('\n').filter(p => p.trim()).map(p => `- ${p.trim()}`).join('\n');
     const consList = data.cons?.split('\n').filter(c => c.trim()).map(c => `- ${c.trim()}`).join('\n');
-    const categoryList = data.categories ? 
-        data.categories.split(',').map(c => c.trim()).filter(c => c) : 
-        ['reviews'];
-
-    // Affiliate link appears at the top
-    const affiliateMarkdown = data.affiliateLink ? `
-[Check Price on Amazon](${data.affiliateLink})
-` : '';
 
     return `---
 title: "${data.title.replace(/"/g, '\\"')}"
@@ -137,9 +103,9 @@ image: "${data.image || ''}"
 rating: ${data.rating || 5}
 affiliateLink: "${data.affiliateLink || ''}"
 youtubeId: "${data.youtubeLink || ''}"
-categories: [${categoryList.map(c => `"${c}"`).join(', ')}]
+categories: [${categoryList.join(', ')}]
 date: "${currentDate}"
-slug: "${seoSlug}"
+slug: "${slug}"
 draft: false
 ---
 
@@ -147,11 +113,9 @@ draft: false
 
 ${data.image ? `![${data.title}](${data.image})` : ''}
 
-${data.description ? ` ${data.description}` : ''}
+${data.description || ''}
 
-${affiliateMarkdown}  <!-- Affiliate link inserted at the top -->
-
-${data.content || '## Introduction\n\nStart your comprehensive review here...'}
+${data.content || 'Start your comprehensive review here...'}
 
 ${keyFeaturesList ? `
 ## Key Features
@@ -182,12 +146,7 @@ ${data.finalVerdict || '*Your final verdict and recommendation*'}
 }
 
 function generateSlug(title) {
-    return title
-        .toLowerCase()
-        .replace(/[^a-z0-9 -]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .substring(0, 60);
+    return title.toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').substring(0, 60);
 }
 
 async function publishToGitHub({ token, content, title, filename }) {
@@ -195,36 +154,19 @@ async function publishToGitHub({ token, content, title, filename }) {
     const REPO_NAME = 'reviewindex';
     const finalFilename = filename.endsWith('.md') ? filename : `${filename}.md`;
     const filePath = `content/reviews/${finalFilename}`;
-
     const encodedContent = btoa(unescape(encodeURIComponent(content)));
 
     const response = await fetch(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${filePath}`, 
         {
             method: 'PUT',
-            headers: {
-                'Authorization': `token ${token}`,
-                'Content-Type': 'application/json',
-                'User-Agent': 'Review-Index-App'
-            },
-            body: JSON.stringify({
-                message: `Add review: ${title}`,
-                content: encodedContent,
-                branch: 'main'
-            })
+            headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json', 'User-Agent': 'Review-Index-App' },
+            body: JSON.stringify({ message: `Add review: ${title}`, content: encodedContent, branch: 'main' })
         }
     );
 
     const data = await response.json();
+    if (!response.ok) throw new Error(data.message || `GitHub API error: ${response.status}`);
 
-    if (!response.ok) {
-        throw new Error(data.message || `GitHub API error: ${response.status}`);
-    }
-
-    return {
-        sha: data.content.sha,
-        url: data.content.html_url,
-        path: filePath,
-        siteUrl: `https://reviewindex.pages.dev/review/${filename.replace('.md', '')}`
-    };
+    return { sha: data.content.sha, url: data.content.html_url, path: filePath, siteUrl: `https://reviewindex.pages.dev/review/${filename.replace('.md','')}` };
 }
