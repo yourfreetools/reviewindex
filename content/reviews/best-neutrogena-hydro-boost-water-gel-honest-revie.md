@@ -1,14 +1,5 @@
 ---
-title: "Best Neutrogena Hydro Boost Water Gel – Honest Review 2025"
-description: "Comprehensive review of Neutrogena Hydro Boost Water Gel covering features, performance, and value proposition for hydration, texture, and skin comfort.."
-image: "https://post.healthline.com/wp-content/uploads/2022/01/1826371-Neutrogena-Hydro-Boost-Water-Gel-Review-1296x728-Header-c0dcdf.jpg"
-rating: 5
-affiliateLink: "https://amzn.to/4mGuCUB"
-youtubeId: ""
-categories: ["reviews", "beauty", "skincare"]
-date: "2025-09-24T23:02:29.705Z"
-slug: "best-neutrogena-hydro-boost-water-gel-honest-review-2025"
-draft: false
+related_posts: ["popular-reviews", "latest-reviews"]
 ---
 
 # Best Neutrogena Hydro Boost Water Gel – Honest Review 2025
