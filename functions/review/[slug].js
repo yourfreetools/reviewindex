@@ -1,5 +1,5 @@
 // functions/review/[...slug].js
-// Fixed version - uses real image URLs only, no default thumbnails
+// Fixed version - shows all 4 related posts with titles/descriptions only
 
 export async function onRequest(context) {
   const { request, params, env } = context;
@@ -25,27 +25,25 @@ export async function onRequest(context) {
     
     // Check if we already have pre-computed related posts in frontmatter
     if (frontmatter.checked && Array.isArray(frontmatter.related)) {
-      // Use pre-computed related posts from frontmatter (no API calls needed)
+      // Use ALL pre-computed related posts from frontmatter (no API calls needed)
       relatedPosts = frontmatter.related.map(r => ({
         slug: r.slug,
         title: r.title || formatSlug(r.slug),
         description: r.description || '',
-        image: r.image, // Use the actual image URL (no default fallback)
         categories: r.categories || []
       }));
-      console.log(`✅ Using pre-computed related posts for ${slug}`);
+      console.log(`✅ Using ${relatedPosts.length} pre-computed related posts for ${slug}`);
     } else {
       // First view after publishing - compute related posts (this will make API calls)
       console.log(`🔍 Computing related posts for ${slug} (first view)`);
       const fresh = await findRelatedPostsFromGitHub(frontmatter, slug, env.GITHUB_TOKEN);
-      relatedPosts = (fresh || []).slice(0, 3);
+      relatedPosts = (fresh || []).slice(0, 4); // Get up to 4 posts
 
-      // Save complete related post data with actual images
+      // Save complete related post data
       frontmatter.related = relatedPosts.map(p => ({
         slug: p.slug,
         title: p.title,
         description: p.description || '',
-        image: p.image, // Save the actual image URL only
         categories: p.categories || []
       }));
       frontmatter.checked = true;
@@ -53,7 +51,7 @@ export async function onRequest(context) {
       // Attempt write back to GitHub
       try {
         await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
-        console.log(`✅ Wrote related posts into ${slug}.md - future views will use cached data`);
+        console.log(`✅ Wrote ${relatedPosts.length} related posts into ${slug}.md - future views will use cached data`);
       } catch (err) {
         console.error('Failed to write related posts to GitHub:', err);
       }
@@ -121,9 +119,6 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
           yamlLines.push(`  - slug: "${escapeYaml(String(obj.slug || ''))}"`);
           yamlLines.push(`    title: "${escapeYaml(String(obj.title || ''))}"`);
           yamlLines.push(`    description: "${escapeYaml(String(obj.description || ''))}"`);
-          if (obj.image) {
-            yamlLines.push(`    image: "${escapeYaml(String(obj.image))}"`);
-          }
           const cats = (obj.categories || []).map(c => `"${escapeYaml(String(c))}"`).join(', ');
           yamlLines.push(`    categories: [${cats}]`);
         }
@@ -329,8 +324,7 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
           title: p.title || formatSlug(p.slug),
           slug: p.slug,
           description: p.description || '',
-          image: p.image, // Use actual image URL only
-          categories: p.categories || [], // Use original categories
+          categories: p.categories || [],
           matchCount: matches.length
         });
       }
@@ -373,7 +367,6 @@ async function fetchAllPostsMetadata(githubToken) {
             slug: f.name.replace('.md', ''),
             title: frontmatter.title,
             description: frontmatter.description,
-            image: frontmatter.image, // Actual image URL only
             categories: frontmatter.categories
           });
         }
@@ -532,10 +525,10 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
   .header h1{font-size:2rem;margin-bottom:.5rem}
   .meta-info{background:linear-gradient(135deg,#f8fafc,#e2e8f0);padding:1rem;border-radius:8px;margin:1rem 0}
   .content img.content-image{max-width:100%;height:auto;border-radius:8px}
-  .related-item{display:flex;gap:12px;align-items:flex-start;text-decoration:none;color:inherit;padding:12px;border-radius:8px;border:1px solid #e6eef9;transition:transform 0.2s}
-  .related-item:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.1)}
-  .related-thumbnail img{width:100px;height:100px;object-fit:cover;border-radius:8px}
-  .no-image{width:100px;height:100px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:8px;color:#999;font-size:12px}
+  .related-item{display:block;text-decoration:none;color:inherit;padding:16px;border-radius:8px;border:1px solid #e6eef9;transition:transform 0.2s;margin-bottom:12px}
+  .related-item:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.1);background:#f8fafc}
+  .related-item h3{color:#2563eb;margin:0 0 8px 0}
+  .related-item p{color:#666;margin:0}
 </style>
 </head>
 <body>
@@ -572,21 +565,12 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
   
   return `<section class="related-posts" aria-labelledby="related-posts-title" style="margin-top:2rem">
     <h2 id="related-posts-title">🔗 More ${escapeHtml(displayCategory.charAt(0).toUpperCase() + displayCategory.slice(1))} Reviews</h2>
-    <div style="display:grid;gap:12px;margin-top:12px">
+    <div style="margin-top:16px">
       ${relatedPosts.map(p => `
         <a class="related-item" href="/review/${encodeURIComponent(p.slug)}" aria-label="${escapeHtml(p.title)}">
-          <div class="related-thumbnail">
-            ${p.image ? `
-              <img src="${escapeHtml(p.image)}" alt="${escapeHtml(p.title)}">
-            ` : `
-              <div class="no-image">No Image</div>
-            `}
-          </div>
-          <div>
-            <h3 style="margin:0">${escapeHtml(p.title)}</h3>
-            ${p.description ? `<p style="margin:.25rem 0;color:#666">${escapeHtml(p.description)}</p>` : ''}
-            ${(p.categories || []).map(c => `<span style="display:inline-block;background:#eef6ff;color:#034a86;padding:.15rem .4rem;border-radius:4px;margin-right:.25rem;font-size:.8rem">${escapeHtml(c)}</span>`).join('')}
-          </div>
+          <h3>${escapeHtml(p.title)}</h3>
+          ${p.description ? `<p>${escapeHtml(p.description)}</p>` : ''}
+          ${(p.categories || []).map(c => `<span style="display:inline-block;background:#eef6ff;color:#034a86;padding:.15rem .4rem;border-radius:4px;margin-right:.25rem;font-size:.8rem">${escapeHtml(c)}</span>`).join('')}
         </a>`).join('')}
     </div>
   </section>`;
