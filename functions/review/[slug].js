@@ -22,58 +22,61 @@ export async function onRequest(context) {
     frontmatter = frontmatter || {};
 
     // 3) determine related posts (either from frontmatter or compute & save)
-    let relatedPosts = [];
-    if (frontmatter.checked) {
-      // already checked — use saved values
-      const saved = frontmatter.related || [];
-      if (Array.isArray(saved)) {
-        relatedPosts = saved.map(r => {
-          return {
-            slug: r.slug,
-            title: r.title || formatSlug(r.slug),
-            description: r.description || '',
-            // Use the actual image URL from frontmatter
-            image: r.image,
-            categories: r.categories || []
-          };
-        });
-        
-        console.log(`✅ Loaded ${relatedPosts.length} related posts from frontmatter`);
-      }
-    } else {
-      // first view — compute related posts
-      const fresh = await findRelatedPostsFromGitHub(frontmatter, slug, env.GITHUB_TOKEN);
-      relatedPosts = (fresh || []).slice(0, 3);
+    // 3) determine related posts (either from frontmatter or compute & save)
+let relatedPosts = [];
+if (frontmatter.checked) {
+  // already checked — use saved values
+  const saved = frontmatter.related || [];
+  if (Array.isArray(saved)) {
+    // DEBUG: Check what we're actually getting
+    console.log('RAW related posts from frontmatter:', saved);
+    
+    relatedPosts = saved.map(r => {
+      // Use the SAME approach as the main image
+      const relatedImage = r.image; // Direct access, no fallback
+      
+      console.log('Related post image debug:', {
+        slug: r.slug,
+        rawImage: r.image,
+        imageType: typeof r.image,
+        imageExists: !!r.image
+      });
+      
+      return {
+        slug: r.slug,
+        title: r.title || formatSlug(r.slug),
+        description: r.description || '',
+        image: relatedImage, // Same as main image: frontmatter.image
+        categories: r.categories || []
+      };
+    });
+  }
+} else {
+  // first view — compute related posts
+  const fresh = await findRelatedPostsFromGitHub(frontmatter, slug, env.GITHUB_TOKEN);
+  relatedPosts = (fresh || []).slice(0, 3);
 
-      if (relatedPosts.length > 0) {
-        frontmatter.related = relatedPosts.map(p => ({
-          slug: p.slug,
-          title: p.title,
-          description: p.description || '',
-          image: p.image || '',
-          categories: p.categories || []
-        }));
-        frontmatter.checked = true;
+  if (relatedPosts.length > 0) {
+    frontmatter.related = relatedPosts.map(p => ({
+      slug: p.slug,
+      title: p.title,
+      description: p.description || '',
+      image: p.image, // Save the real image URL directly
+      categories: p.categories || []
+    }));
+    frontmatter.checked = true;
 
-        try {
-          await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
-          console.log(`✅ Saved ${relatedPosts.length} related posts to ${slug}.md`);
-        } catch (err) {
-          console.error('Failed to save related posts:', err);
-        }
-      } else {
-        frontmatter.checked = true;
-        frontmatter.related = [];
-        
-        try {
-          await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
-          console.log(`✅ No related posts found for ${slug}`);
-        } catch (err) {
-          console.error('Failed to update file:', err);
-        }
-      }
+    try {
+      await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
+      console.log(`✅ Saved ${relatedPosts.length} related posts with real images`);
+    } catch (err) {
+      console.error('Failed to save related posts:', err);
     }
-
+  } else {
+    frontmatter.checked = true;
+    frontmatter.related = [];
+  }
+};
     // 4) render page
     const htmlContent = convertMarkdownToHTML(content);
     const fullHtml = await renderPostPage(frontmatter, htmlContent, slug, request.url, relatedPosts);
@@ -732,6 +735,7 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
         <a class="related-item" href="/review/${encodeURIComponent(p.slug)}" aria-label="${escapeHtml(p.title)}">
           <div class="related-thumbnail">
             <img src="${escapeHtml(p.image)}" alt="${escapeHtml(p.title)}" loading="lazy">
+            <!-- SAME as main post image: <img src="${frontmatter.image}"> -->
           </div>
           <div class="related-content">
             <h3>${escapeHtml(p.title)}</h3>
@@ -743,7 +747,7 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
         </a>`).join('')}
     </div>
   </section>`;
-}
+                }
 
 function renderErrorPage(title, message) {
   const html = `<!DOCTYPE html>
