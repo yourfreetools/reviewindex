@@ -2,13 +2,30 @@
 title: "Best Paula’s Choice 2% BHA Liquid Exfoliant – Honest Review 2025"
 description: "Comprehensive review of Paula’s Choice 2% BHA Liquid Exfoliant covering features, performance & value proposition for pores, acne, and skin texture improvement"
 image: "https://www.spacenk.com/on/demandware.static/-/Library-Sites-spacenk-global/default/dw0b14bb80/paulas-choice-bha-liquid-exfoliant-review-space-nk.jpg"
-rating: 5
+rating: "5"
 affiliateLink: ""
 youtubeId: ""
 categories: ["reviews", "beauty", "skincare"]
 date: "2025-09-24T22:57:49.707Z"
 slug: "best-paulas-choice-2-bha-liquid-exfoliant-honest-review-2025"
 draft: false
+related:
+  - slug: "best-hero-mighty-patch-original-honest-review-2025"
+    title: "Best Hero Mighty Patch Original – Honest Review 2025"
+    description: "Comprehensive review of Hero Cosmetics Mighty Patch Original covering features, performance, and value proposition for fast‐acting acne treatment"
+    image: "https://www.herocosmetics.us/cdn/shop/files/250602_MP_POD_PDP_1.jpg"
+    categories: ["reviews", "beauty", "skincare"]
+  - slug: "best-neutrogena-hydro-boost-water-gel-honest-revie"
+    title: "Best Neutrogena Hydro Boost Water Gel – Honest Review 2025"
+    description: "Comprehensive review of Neutrogena Hydro Boost Water Gel covering features, performance, and value proposition for hydration, texture, and skin comfort.."
+    image: "https://post.healthline.com/wp-content/uploads/2022/01/1826371-Neutrogena-Hydro-Boost-Water-Gel-Review-1296x728-Header-c0dcdf.jpg"
+    categories: ["reviews", "beauty", "skincare"]
+  - slug: "best-ordinary-retinol-1-in-squalane-honest-review"
+    title: "Best Ordinary Retinol 1% in Squalane – Honest Review 2025"
+    description: "Comprehensive review of The Ordinary Retinol 1% in Squalane covering features, performance, and value proposition for skin aging and texture"
+    image: "https://cdn11.bigcommerce.com/s-63354/images/stencil/1280x1280/products/2600/15176/The_Ordinary_Retinol_1_in_Squalane_30ml_1__67398.1709992538.jpg"
+    categories: ["reviews", "beauty", "skincare"]
+checked: true
 ---
 
 # Best Paula’s Choice 2% BHA Liquid Exfoliant – Honest Review 2025
