@@ -1,5 +1,5 @@
 // functions/review/[...slug].js
-// Optimized version to reduce GitHub API calls
+// Fixed version - saves actual images and categories of related posts
 
 export async function onRequest(context) {
   const { request, params, env } = context;
@@ -31,7 +31,7 @@ export async function onRequest(context) {
         title: r.title || formatSlug(r.slug),
         description: r.description || '',
         image: r.image || '/default-thumbnail.jpg',
-        categories: r.categories || []
+        categories: r.categories || [] // Use the saved categories (original from related post)
       }));
       console.log(`✅ Using pre-computed related posts for ${slug}`);
     } else {
@@ -40,13 +40,13 @@ export async function onRequest(context) {
       const fresh = await findRelatedPostsFromGitHub(frontmatter, slug, env.GITHUB_TOKEN);
       relatedPosts = (fresh || []).slice(0, 3); // up to 3
 
-      // Save full objects into frontmatter and mark checked: true
+      // Save complete related post data with ORIGINAL categories and images
       frontmatter.related = relatedPosts.map(p => ({
         slug: p.slug,
         title: p.title,
         description: p.description || '',
-        image: p.image || '/default-thumbnail.jpg', // Save the actual image URL
-        categories: p.categories || []
+        image: p.originalImage || p.image || '/default-thumbnail.jpg', // Save the actual image URL
+        categories: p.originalCategories || p.categories || [] // Save original categories from related post
       }));
       frontmatter.checked = true;
 
@@ -92,7 +92,7 @@ async function fetchPostContent(slug, githubToken) {
       headers: {
         Authorization: `token ${githubToken}`,
         'User-Agent': 'Review-Index-App',
-        Accept: 'application/vnd.github.v3.raw' // raw file content
+        Accept: 'application/vnd.github.v3.raw'
       }
     });
 
@@ -118,7 +118,6 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
   const yamlLines = [];
   for (const [key, val] of Object.entries(frontmatter)) {
     if (Array.isArray(val)) {
-      // array - either array of scalars or array of objects
       if (val.length > 0 && typeof val[0] === 'object') {
         yamlLines.push(`${key}:`);
         for (const obj of val) {
@@ -126,7 +125,6 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
           yamlLines.push(`    title: "${escapeYaml(String(obj.title || ''))}"`);
           yamlLines.push(`    description: "${escapeYaml(String(obj.description || ''))}"`);
           yamlLines.push(`    image: "${escapeYaml(String(obj.image || '/default-thumbnail.jpg'))}"`);
-          // categories as inline array
           const cats = (obj.categories || []).map(c => `"${escapeYaml(String(c))}"`).join(', ');
           yamlLines.push(`    categories: [${cats}]`);
         }
@@ -164,16 +162,10 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
   const sha = fileMeta.sha;
   if (!sha) throw new Error('No sha returned for file');
 
-  // take original markdown body (without existing frontmatter)
   const { content: body } = parseMarkdown(oldContent);
-
-  // assemble new md
   const newMd = `---\n${yamlLines.join('\n')}\n---\n\n${body}`;
-
-  // base64 encode (unicode safe)
   const encoded = base64Encode(newMd);
 
-  // put update
   const putRes = await fetch(apiUrl, {
     method: 'PUT',
     headers: {
@@ -197,13 +189,11 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
 }
 
 function base64Encode(str) {
-  // unicode-safe base64
   try {
     if (typeof btoa === 'function') {
       return btoa(unescape(encodeURIComponent(str)));
     }
   } catch (_) {}
-  // fallback (Node environment)
   if (typeof Buffer !== 'undefined') {
     return Buffer.from(str).toString('base64');
   }
@@ -218,17 +208,8 @@ function escapeYaml(s) {
   return String(s).replace(/"/g, '\\"');
 }
 
+// -------------------- YAML frontmatter parser --------------------
 
-// -------------------- Simple YAML frontmatter parser --------------------
-// Supports:
-// key: "value"
-// key: value
-// key: [ "a", "b" ]
-// key:
-//   - slug: "x"
-//     title: "y"
-//     description: "z"
-//     image: "..."
 function parseMarkdown(md) {
   const result = { frontmatter: {}, content: md };
   if (!md || !md.startsWith('---')) return result;
@@ -251,32 +232,24 @@ function parseYAMLBlock(yaml) {
   while (i < lines.length) {
     let line = lines[i];
     if (/^\s*$/.test(line)) { i++; continue; }
-    // key: rest
     const m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
     if (!m) { i++; continue; }
     const key = m[1];
     let rest = m[2];
 
     if (rest === '') {
-      // block: could be list of objects or nested object
-      // peek next non-empty line
       const next = lines[i+1] || '';
       if (/^\s*-\s+/.test(next) || /^\s*-\s*$/.test(next)) {
-        // list — parse items
         const arr = [];
         i++;
         while (i < lines.length && /^\s*-\s*/.test(lines[i])) {
-          // start of item
-          // remove leading '- ' and parse possible inline or multline properties
           let itemLine = lines[i].replace(/^\s*-\s*/, '');
           const item = {};
           if (itemLine && /:/.test(itemLine)) {
-            // inline prop like '- slug: "x"'
             const pm = itemLine.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
             if (pm) item[pm[1]] = parseValue(pm[2]);
             i++;
           } else if (!itemLine) {
-            // properties on subsequent indented lines
             i++;
             while (i < lines.length && /^\s{2,}[A-Za-z0-9_-]+:/.test(lines[i])) {
               const prop = lines[i].trim();
@@ -285,19 +258,16 @@ function parseYAMLBlock(yaml) {
               i++;
             }
           } else {
-            // something else inline
             i++;
           }
-          // ensure categories arrays are arrays if present as string
           if (item.categories && typeof item.categories === 'string' && item.categories.startsWith('[')) {
             item.categories = parseArrayInline(item.categories);
           }
           arr.push(item);
         }
         fm[key] = arr;
-        continue; // already advanced i
+        continue;
       } else {
-        // nested object (indented properties)
         const obj = {};
         i++;
         while (i < lines.length && /^\s{2,}[A-Za-z0-9_-]+:/.test(lines[i])) {
@@ -310,7 +280,6 @@ function parseYAMLBlock(yaml) {
         continue;
       }
     } else {
-      // scalar or inline array or boolean
       if (rest.startsWith('[') && rest.endsWith(']')) {
         fm[key] = parseArrayInline(rest);
       } else {
@@ -339,8 +308,7 @@ function parseArrayInline(text) {
   return inner.split(',').map(x => parseValue(x.trim().replace(/^"|"$/g, '')));
 }
 
-
-// -------------------- Optimized Related posts discovery --------------------
+// -------------------- Fixed Related posts discovery --------------------
 
 async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githubToken) {
   try {
@@ -354,21 +322,25 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
     for (const p of all) {
       if (!p || !p.slug) continue;
       if (p.slug === currentSlug) continue;
+      
       const pcats = normalizeCategories(p.categories || []);
       const matches = currentCats.filter(c => pcats.includes(c));
+      
       if (matches.length > 0) {
         related.push({
           title: p.title || formatSlug(p.slug),
           slug: p.slug,
           description: p.description || '',
           image: p.image || '/default-thumbnail.jpg',
-          categories: matches,
+          // Save ORIGINAL data from the related post for proper display
+          originalImage: p.image || '/default-thumbnail.jpg', // The actual image from related post
+          originalCategories: p.categories || [], // Original categories from related post
+          categories: matches, // Only matched categories for sorting
           matchCount: matches.length
         });
       }
     }
 
-    // sort by matchCount desc then return
     related.sort((a, b) => (b.matchCount || 0) - (a.matchCount || 0));
     console.log(`✅ Found ${related.length} related posts for ${currentSlug}`);
     return related;
@@ -397,7 +369,6 @@ async function fetchAllPostsMetadata(githubToken) {
 
     for (const f of mdFiles) {
       try {
-        // use download_url if present for raw access
         const rawUrl = f.download_url || `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/content/reviews/${f.name}`;
         const r = await fetch(rawUrl, { headers: { 'User-Agent': 'Review-Index-App' } });
         if (r.ok) {
@@ -422,8 +393,7 @@ async function fetchAllPostsMetadata(githubToken) {
   }
 }
 
-
-// -------------------- Rendering / helpers (SEO preserved) --------------------
+// -------------------- Rendering / helpers --------------------
 
 function convertMarkdownToHTML(markdown) {
   if (!markdown) return '';
@@ -532,7 +502,6 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
-// full render function (keeps your SEO + styles + related rendering)
 async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relatedPosts = []) {
   const canonicalUrl = `https://reviewindex.pages.dev/review/${slug}`;
   const schemaMarkup = generateSchemaMarkup(frontmatter, slug, canonicalUrl);
@@ -540,7 +509,6 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
   const youtubeEmbed = frontmatter.youtubeId ? generateYouTubeEmbed(frontmatter.youtubeId, frontmatter.title || formatSlug(slug)) : '';
   const relatedPostsHTML = generateRelatedPostsHTML(relatedPosts, frontmatter.categories);
 
-  // big HTML template preserved (kept concise here)
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -564,13 +532,13 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
 <meta name="twitter:image:alt" content="${escapeHtml(frontmatter.title || formatSlug(slug))} product review">
 <script type="application/ld+json">${JSON.stringify(schemaMarkup)}</script>
 <style>
-  /* (your styles here — kept compact to save space) */
   body{font-family:system-ui,Segoe UI,Arial;background:#f5f5f5;color:#333;padding:20px}
   .container{max-width:800px;margin:0 auto;background:#fff;padding:32px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.08)}
   .header h1{font-size:2rem;margin-bottom:.5rem}
   .meta-info{background:linear-gradient(135deg,#f8fafc,#e2e8f0);padding:1rem;border-radius:8px;margin:1rem 0}
   .content img.content-image{max-width:100%;height:auto;border-radius:8px}
-  .related-item{display:flex;gap:12px;align-items:flex-start;text-decoration:none;color:inherit;padding:12px;border-radius:8px;border:1px solid #e6eef9}
+  .related-item{display:flex;gap:12px;align-items:flex-start;text-decoration:none;color:inherit;padding:12px;border-radius:8px;border:1px solid #e6eef9;transition:transform 0.2s}
+  .related-item:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.1)}
   .related-thumbnail img{width:100px;height:100px;object-fit:cover;border-radius:8px}
 </style>
 </head>
@@ -603,13 +571,20 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
 
 function generateRelatedPostsHTML(relatedPosts, currentCategories) {
   if (!relatedPosts || relatedPosts.length === 0) return '';
+  
+  // Use the first category of the current post for the section title
   const displayCategory = (normalizeCategories(currentCategories || [])[0] || 'related');
+  
   return `<section class="related-posts" aria-labelledby="related-posts-title" style="margin-top:2rem">
     <h2 id="related-posts-title">🔗 More ${escapeHtml(displayCategory.charAt(0).toUpperCase() + displayCategory.slice(1))} Reviews</h2>
     <div style="display:grid;gap:12px;margin-top:12px">
       ${relatedPosts.map(p => `
         <a class="related-item" href="/review/${encodeURIComponent(p.slug)}" aria-label="${escapeHtml(p.title)}">
-          <div class="related-thumbnail"><img src="${escapeHtml(p.image || '/default-thumbnail.jpg')}" alt="${escapeHtml(p.title)}"></div>
+          <div class="related-thumbnail">
+            <img src="${escapeHtml(p.image || '/default-thumbnail.jpg')}" 
+                 alt="${escapeHtml(p.title)}"
+                 onerror="this.src='/default-thumbnail.jpg'">
+          </div>
           <div>
             <h3 style="margin:0">${escapeHtml(p.title)}</h3>
             ${p.description ? `<p style="margin:.25rem 0;color:#666">${escapeHtml(p.description)}</p>` : ''}
@@ -619,7 +594,6 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
     </div>
   </section>`;
 }
-
 
 // -------------------- Small util helpers --------------------
 
