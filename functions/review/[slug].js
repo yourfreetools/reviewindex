@@ -1,5 +1,5 @@
 // functions/review/[...slug].js
-// Fixed version - saves actual images and categories of related posts
+// Fixed version - uses real image URLs only, no default thumbnails
 
 export async function onRequest(context) {
   const { request, params, env } = context;
@@ -30,33 +30,32 @@ export async function onRequest(context) {
         slug: r.slug,
         title: r.title || formatSlug(r.slug),
         description: r.description || '',
-        image: r.image || '/default-thumbnail.jpg',
-        categories: r.categories || [] // Use the saved categories (original from related post)
+        image: r.image, // Use the actual image URL (no default fallback)
+        categories: r.categories || []
       }));
       console.log(`✅ Using pre-computed related posts for ${slug}`);
     } else {
       // First view after publishing - compute related posts (this will make API calls)
       console.log(`🔍 Computing related posts for ${slug} (first view)`);
       const fresh = await findRelatedPostsFromGitHub(frontmatter, slug, env.GITHUB_TOKEN);
-      relatedPosts = (fresh || []).slice(0, 3); // up to 3
+      relatedPosts = (fresh || []).slice(0, 3);
 
-      // Save complete related post data with ORIGINAL categories and images
+      // Save complete related post data with actual images
       frontmatter.related = relatedPosts.map(p => ({
         slug: p.slug,
         title: p.title,
         description: p.description || '',
-        image: p.originalImage || p.image || '/default-thumbnail.jpg', // Save the actual image URL
-        categories: p.originalCategories || p.categories || [] // Save original categories from related post
+        image: p.image, // Save the actual image URL only
+        categories: p.categories || []
       }));
       frontmatter.checked = true;
 
-      // Attempt write back to GitHub (do not block render on failure)
+      // Attempt write back to GitHub
       try {
         await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
         console.log(`✅ Wrote related posts into ${slug}.md - future views will use cached data`);
       } catch (err) {
         console.error('Failed to write related posts to GitHub:', err);
-        // Continue rendering even if write fails
       }
     }
 
@@ -77,7 +76,6 @@ export async function onRequest(context) {
     return renderErrorPage('Server Error', 'An error occurred while loading the review.');
   }
 }
-
 
 // -------------------- GitHub file helpers --------------------
 
@@ -114,7 +112,6 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
   const filePath = `content/reviews/${slug}.md`;
   const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${filePath}`;
 
-  // build YAML from frontmatter
   const yamlLines = [];
   for (const [key, val] of Object.entries(frontmatter)) {
     if (Array.isArray(val)) {
@@ -124,7 +121,9 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
           yamlLines.push(`  - slug: "${escapeYaml(String(obj.slug || ''))}"`);
           yamlLines.push(`    title: "${escapeYaml(String(obj.title || ''))}"`);
           yamlLines.push(`    description: "${escapeYaml(String(obj.description || ''))}"`);
-          yamlLines.push(`    image: "${escapeYaml(String(obj.image || '/default-thumbnail.jpg'))}"`);
+          if (obj.image) {
+            yamlLines.push(`    image: "${escapeYaml(String(obj.image))}"`);
+          }
           const cats = (obj.categories || []).map(c => `"${escapeYaml(String(c))}"`).join(', ');
           yamlLines.push(`    categories: [${cats}]`);
         }
@@ -148,7 +147,6 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
     }
   }
 
-  // get existing file SHA
   const getRes = await fetch(apiUrl, {
     headers: { Authorization: `token ${githubToken}`, 'User-Agent': 'Review-Index-App', Accept: 'application/vnd.github.v3+json' }
   });
@@ -331,11 +329,8 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
           title: p.title || formatSlug(p.slug),
           slug: p.slug,
           description: p.description || '',
-          image: p.image || '/default-thumbnail.jpg',
-          // Save ORIGINAL data from the related post for proper display
-          originalImage: p.image || '/default-thumbnail.jpg', // The actual image from related post
-          originalCategories: p.categories || [], // Original categories from related post
-          categories: matches, // Only matched categories for sorting
+          image: p.image, // Use actual image URL only
+          categories: p.categories || [], // Use original categories
           matchCount: matches.length
         });
       }
@@ -378,7 +373,7 @@ async function fetchAllPostsMetadata(githubToken) {
             slug: f.name.replace('.md', ''),
             title: frontmatter.title,
             description: frontmatter.description,
-            image: frontmatter.image,
+            image: frontmatter.image, // Actual image URL only
             categories: frontmatter.categories
           });
         }
@@ -505,7 +500,7 @@ function escapeHtml(str) {
 async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relatedPosts = []) {
   const canonicalUrl = `https://reviewindex.pages.dev/review/${slug}`;
   const schemaMarkup = generateSchemaMarkup(frontmatter, slug, canonicalUrl);
-  const socialImage = frontmatter.image || 'https://reviewindex.pages.dev/default-social-image.jpg';
+  const socialImage = frontmatter.image || '';
   const youtubeEmbed = frontmatter.youtubeId ? generateYouTubeEmbed(frontmatter.youtubeId, frontmatter.title || formatSlug(slug)) : '';
   const relatedPostsHTML = generateRelatedPostsHTML(relatedPosts, frontmatter.categories);
 
@@ -540,6 +535,7 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
   .related-item{display:flex;gap:12px;align-items:flex-start;text-decoration:none;color:inherit;padding:12px;border-radius:8px;border:1px solid #e6eef9;transition:transform 0.2s}
   .related-item:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.1)}
   .related-thumbnail img{width:100px;height:100px;object-fit:cover;border-radius:8px}
+  .no-image{width:100px;height:100px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border-radius:8px;color:#999;font-size:12px}
 </style>
 </head>
 <body>
@@ -572,7 +568,6 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
 function generateRelatedPostsHTML(relatedPosts, currentCategories) {
   if (!relatedPosts || relatedPosts.length === 0) return '';
   
-  // Use the first category of the current post for the section title
   const displayCategory = (normalizeCategories(currentCategories || [])[0] || 'related');
   
   return `<section class="related-posts" aria-labelledby="related-posts-title" style="margin-top:2rem">
@@ -581,9 +576,11 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
       ${relatedPosts.map(p => `
         <a class="related-item" href="/review/${encodeURIComponent(p.slug)}" aria-label="${escapeHtml(p.title)}">
           <div class="related-thumbnail">
-            <img src="${escapeHtml(p.image || '/default-thumbnail.jpg')}" 
-                 alt="${escapeHtml(p.title)}"
-                 onerror="this.src='/default-thumbnail.jpg'">
+            ${p.image ? `
+              <img src="${escapeHtml(p.image)}" alt="${escapeHtml(p.title)}">
+            ` : `
+              <div class="no-image">No Image</div>
+            `}
           </div>
           <div>
             <h3 style="margin:0">${escapeHtml(p.title)}</h3>
