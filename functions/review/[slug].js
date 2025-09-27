@@ -31,9 +31,21 @@ export async function onRequest(context) {
           slug: r.slug,
           title: r.title || formatSlug(r.slug),
           description: r.description || '',
-          image: r.image || '/default-thumbnail.jpg',
+          // FIX: Properly handle image URL - use actual image if available
+          image: r.image && r.image !== '/default-thumbnail.jpg' ? r.image : (await getPostImage(r.slug, env.GITHUB_TOKEN)) || '/default-thumbnail.jpg',
           categories: r.categories || []
         }));
+        
+        // If we got empty images, try to refetch them
+        relatedPosts = await Promise.all(
+          relatedPosts.map(async post => {
+            if (!post.image || post.image === '/default-thumbnail.jpg') {
+              const actualImage = await getPostImage(post.slug, env.GITHUB_TOKEN);
+              return { ...post, image: actualImage || '/default-thumbnail.jpg' };
+            }
+            return post;
+          })
+        );
       }
     } else {
       // first view — compute related posts with improved matching
@@ -42,6 +54,17 @@ export async function onRequest(context) {
 
       // Only save if we have related posts
       if (relatedPosts.length > 0) {
+        // Ensure we have proper image URLs before saving
+        relatedPosts = await Promise.all(
+          relatedPosts.map(async post => {
+            if (!post.image || post.image === '/default-thumbnail.jpg') {
+              const actualImage = await getPostImage(post.slug, env.GITHUB_TOKEN);
+              return { ...post, image: actualImage || '/default-thumbnail.jpg' };
+            }
+            return post;
+          })
+        );
+
         frontmatter.related = relatedPosts.map(p => ({
           slug: p.slug,
           title: p.title,
@@ -89,6 +112,19 @@ export async function onRequest(context) {
   }
 }
 
+// NEW FUNCTION: Get post image directly from the post's frontmatter
+async function getPostImage(slug, githubToken) {
+  try {
+    const content = await fetchPostContent(slug, githubToken);
+    if (!content) return null;
+    
+    const { frontmatter } = parseMarkdown(content);
+    return frontmatter?.image || null;
+  } catch (err) {
+    console.error('Error getting post image for', slug, err);
+    return null;
+  }
+}
 
 // -------------------- GitHub file helpers --------------------
 
@@ -103,7 +139,7 @@ async function fetchPostContent(slug, githubToken) {
       headers: {
         Authorization: `token ${githubToken}`,
         'User-Agent': 'Review-Index-App',
-        Accept: 'application/vnd.github.v3.raw' // raw file content
+        Accept: 'application/vnd.github.v3.raw'
       }
     });
 
@@ -129,7 +165,6 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
   const yamlLines = [];
   for (const [key, val] of Object.entries(frontmatter)) {
     if (Array.isArray(val)) {
-      // array - either array of scalars or array of objects
       if (val.length > 0 && typeof val[0] === 'object') {
         yamlLines.push(`${key}:`);
         for (const obj of val) {
@@ -137,7 +172,6 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
           yamlLines.push(`    title: "${escapeYaml(String(obj.title || ''))}"`);
           yamlLines.push(`    description: "${escapeYaml(String(obj.description || ''))}"`);
           yamlLines.push(`    image: "${escapeYaml(String(obj.image || '/default-thumbnail.jpg'))}"`);
-          // categories as inline array
           const cats = (obj.categories || []).map(c => `"${escapeYaml(String(c))}"`).join(', ');
           yamlLines.push(`    categories: [${cats}]`);
         }
@@ -175,16 +209,10 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
   const sha = fileMeta.sha;
   if (!sha) throw new Error('No sha returned for file');
 
-  // take original markdown body (without existing frontmatter)
   const { content: body } = parseMarkdown(oldContent);
-
-  // assemble new md
   const newMd = `---\n${yamlLines.join('\n')}\n---\n\n${body}`;
-
-  // base64 encode (unicode safe)
   const encoded = base64Encode(newMd);
 
-  // put update
   const putRes = await fetch(apiUrl, {
     method: 'PUT',
     headers: {
@@ -208,13 +236,11 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
 }
 
 function base64Encode(str) {
-  // unicode-safe base64
   try {
     if (typeof btoa === 'function') {
       return btoa(unescape(encodeURIComponent(str)));
     }
   } catch (_) {}
-  // fallback (Node environment)
   if (typeof Buffer !== 'undefined') {
     return Buffer.from(str).toString('base64');
   }
@@ -229,17 +255,8 @@ function escapeYaml(s) {
   return String(s).replace(/"/g, '\\"');
 }
 
-
 // -------------------- Simple YAML frontmatter parser --------------------
-// Supports:
-// key: "value"
-// key: value
-// key: [ "a", "b" ]
-// key:
-//   - slug: "x"
-//     title: "y"
-//     description: "z"
-//     image: "..."
+
 function parseMarkdown(md) {
   const result = { frontmatter: {}, content: md };
   if (!md || !md.startsWith('---')) return result;
@@ -262,32 +279,24 @@ function parseYAMLBlock(yaml) {
   while (i < lines.length) {
     let line = lines[i];
     if (/^\s*$/.test(line)) { i++; continue; }
-    // key: rest
     const m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
     if (!m) { i++; continue; }
     const key = m[1];
     let rest = m[2];
 
     if (rest === '') {
-      // block: could be list of objects or nested object
-      // peek next non-empty line
       const next = lines[i+1] || '';
       if (/^\s*-\s+/.test(next) || /^\s*-\s*$/.test(next)) {
-        // list — parse items
         const arr = [];
         i++;
         while (i < lines.length && /^\s*-\s*/.test(lines[i])) {
-          // start of item
-          // remove leading '- ' and parse possible inline or multline properties
           let itemLine = lines[i].replace(/^\s*-\s*/, '');
           const item = {};
           if (itemLine && /:/.test(itemLine)) {
-            // inline prop like '- slug: "x"'
             const pm = itemLine.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
             if (pm) item[pm[1]] = parseValue(pm[2]);
             i++;
           } else if (!itemLine) {
-            // properties on subsequent indented lines
             i++;
             while (i < lines.length && /^\s{2,}[A-Za-z0-9_-]+:/.test(lines[i])) {
               const prop = lines[i].trim();
@@ -296,19 +305,16 @@ function parseYAMLBlock(yaml) {
               i++;
             }
           } else {
-            // something else inline
             i++;
           }
-          // ensure categories arrays are arrays if present as string
           if (item.categories && typeof item.categories === 'string' && item.categories.startsWith('[')) {
             item.categories = parseArrayInline(item.categories);
           }
           arr.push(item);
         }
         fm[key] = arr;
-        continue; // already advanced i
+        continue;
       } else {
-        // nested object (indented properties)
         const obj = {};
         i++;
         while (i < lines.length && /^\s{2,}[A-Za-z0-9_-]+:/.test(lines[i])) {
@@ -321,7 +327,6 @@ function parseYAMLBlock(yaml) {
         continue;
       }
     } else {
-      // scalar or inline array or boolean
       if (rest.startsWith('[') && rest.endsWith(']')) {
         fm[key] = parseArrayInline(rest);
       } else {
@@ -350,7 +355,6 @@ function parseArrayInline(text) {
   return inner.split(',').map(x => parseValue(x.trim().replace(/^"|"$/g, '')));
 }
 
-
 // -------------------- Improved Related posts discovery --------------------
 
 async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githubToken) {
@@ -363,29 +367,25 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
 
     for (const p of all) {
       if (!p || !p.slug) continue;
-      if (p.slug === currentSlug) continue; // Exclude current post
+      if (p.slug === currentSlug) continue;
       
       const pcats = normalizeCategories(p.categories || []);
-      
-      // Calculate similarity score based on shared categories
       const sharedCategories = currentCats.filter(c => pcats.includes(c));
       const similarityScore = calculateSimilarityScore(currentCats, pcats, sharedCategories);
       
-      // Only include if there's meaningful similarity (at least 30% or shared categories)
       if (similarityScore >= 0.3 || sharedCategories.length > 0) {
         related.push({
           title: p.title || formatSlug(p.slug),
           slug: p.slug,
           description: p.description || '',
           image: p.image || '/default-thumbnail.jpg',
-          categories: sharedCategories, // Only show shared categories
+          categories: sharedCategories,
           matchCount: sharedCategories.length,
           similarityScore: similarityScore
         });
       }
     }
 
-    // Sort by similarity score (descending) then by match count
     related.sort((a, b) => {
       if (b.similarityScore !== a.similarityScore) {
         return b.similarityScore - a.similarityScore;
@@ -393,7 +393,7 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
       return (b.matchCount || 0) - (a.matchCount || 0);
     });
     
-    return related.slice(0, 5); // Return top 5 for selection
+    return related.slice(0, 5);
   } catch (err) {
     console.error('findRelatedPostsFromGitHub error', err);
     return [];
@@ -402,11 +402,8 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
 
 function calculateSimilarityScore(currentCats, otherCats, sharedCats) {
   if (currentCats.length === 0 || otherCats.length === 0) return 0;
-  
-  // Jaccard similarity coefficient: |A ∩ B| / |A ∪ B|
   const unionSize = new Set([...currentCats, ...otherCats]).size;
   const intersectionSize = sharedCats.length;
-  
   return intersectionSize / unionSize;
 }
 
@@ -429,7 +426,6 @@ async function fetchAllPostsMetadata(githubToken) {
 
     for (const f of mdFiles) {
       try {
-        // use download_url if present for raw access
         const rawUrl = f.download_url || `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/content/reviews/${f.name}`;
         const r = await fetch(rawUrl, { headers: { 'User-Agent': 'Review-Index-App' } });
         if (r.ok) {
@@ -439,7 +435,7 @@ async function fetchAllPostsMetadata(githubToken) {
             slug: f.name.replace('.md', ''),
             title: frontmatter.title,
             description: frontmatter.description,
-            image: frontmatter.image, // Store actual image URL
+            image: frontmatter.image,
             categories: frontmatter.categories
           });
         }
@@ -454,8 +450,7 @@ async function fetchAllPostsMetadata(githubToken) {
   }
 }
 
-
-// -------------------- Rendering / helpers (SEO preserved) --------------------
+// -------------------- Rendering / helpers --------------------
 
 function convertMarkdownToHTML(markdown) {
   if (!markdown) return '';
@@ -564,7 +559,6 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
-// full render function (keeps your SEO + styles + related rendering)
 async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relatedPosts = []) {
   const canonicalUrl = `https://reviewindex.pages.dev/review/${slug}`;
   const schemaMarkup = generateSchemaMarkup(frontmatter, slug, canonicalUrl);
@@ -612,14 +606,12 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
   .content pre { background: #f7fafc; padding: 1rem; border-radius: 6px; overflow-x: auto; margin: 1rem 0; }
   .content code { background: #f7fafc; padding: 0.2rem 0.4rem; border-radius: 3px; font-size: 0.9em; }
   
-  /* YouTube Embed Styles */
   .youtube-embed { margin: 2rem 0; }
   .youtube-embed h3 { font-size: 1.3rem; margin-bottom: 1rem; color: #2d3748; }
   .video-wrapper { position: relative; width: 100%; height: 0; padding-bottom: 56.25%; margin: 1rem 0; }
   .video-wrapper iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 8px; border: none; }
   .video-caption { text-align: center; color: #718096; font-size: 0.9rem; margin-top: 0.5rem; }
   
-  /* Related Posts Styles */
   .related-posts { margin: 2rem 0; }
   .related-posts h2 { font-size: 1.5rem; margin-bottom: 1rem; color: #2d3748; }
   .related-grid { display: grid; gap: 16px; }
@@ -632,7 +624,6 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
   .category-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.5rem; }
   .category-tag { display: inline-block; background: #eef6ff; color: #034a86; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
   
-  /* Affiliate Link Styles - Updated Design */
   .affiliate-section { 
     background: linear-gradient(135deg, #f0f9ff, #e0f2fe); 
     padding: 1.5rem; 
@@ -695,12 +686,10 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
     background: linear-gradient(135deg, #047857, #0d9488);
   }
   
-  /* Back Link */
   .back-nav { text-align: center; margin-top: 2rem; }
   .back-link { display: inline-block; padding: 0.75rem 1.5rem; border: 2px solid #2563eb; border-radius: 8px; text-decoration: none; color: #2563eb; font-weight: 500; transition: all 0.3s ease; }
   .back-link:hover { background: #2563eb; color: #fff; }
   
-  /* Responsive Design */
   @media (max-width: 768px) {
     body { padding: 10px; }
     .container { padding: 20px; }
@@ -798,15 +787,12 @@ function renderErrorPage(title, message) {
   return new Response(html, { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
-
-// -------------------- Small util helpers --------------------
-
 function normalizeCategories(categories) {
   if (!categories) return [];
   if (Array.isArray(categories)) {
     return categories
       .map(c => String(c).toLowerCase().trim())
-      .filter(c => c.length > 0); // Remove empty categories
+      .filter(c => c.length > 0);
   }
   return [String(categories).toLowerCase().trim()].filter(c => c.length > 0);
 }
