@@ -605,6 +605,30 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
           ${(p.categories || []).map(c => `<span style="display:inline-block;background:#eef6ff;color:#034a86;padding:.15rem .4rem;border-radius:4px;margin-right:.25rem;font-size:.8rem">${escapeHtml(c)}</span>`).join('')}
         </a>`).join('')}
     </div>
+    <div style="margin-top:16px">
+      ${relatedPosts.map(p => `
+        <a class="related-item" href="/review/${encodeURIComponent(p.slug)}" aria-label="${escapeHtml(p.title)}">
+          <h3>${escapeHtml(p.title)}</h3>
+          ${p.description ? `<p>${escapeHtml(p.description)}</p>` : ''}
+          ${(p.categories || []).map(c => `<span style="display:inline-block;background:#eef6ff;color:#034a86;padding:.15rem .4rem;border-radius:4px;margin-right:.25rem;font-size:.8rem">${escapeHtml(c)}</span>`).join('')}
+        </a>`).join('')}
+    </div>
+    <div style="margin-top:16px">
+      ${relatedPosts.map(p => `
+        <a class="related-item" href="/review/${encodeURIComponent(p.slug)}" aria-label="${escapeHtml(p.title)}">
+          <h3>${escapeHtml(p.title)}</h3>
+          ${p.description ? `<p>${escapeHtml(p.description)}</p>` : ''}
+          ${(p.categories || []).map(c => `<span style="display:inline-block;background:#eef6ff;color:#034a86;padding:.15rem .4rem;border-radius:4px;margin-right:.25rem;font-size:.8rem">${escapeHtml(c)}</span>`).join('')}
+        </a>`).join('')}
+    </div>
+    <div style="margin-top:16px">
+      ${relatedPosts.map(p => `
+        <a class="related-item" href="/review/${encodeURIComponent(p.slug)}" aria-label="${escapeHtml(p.title)}">
+          <h3>${escapeHtml(p.title)}</h3>
+          ${p.description ? `<p>${escapeHtml(p.description)}</p>` : ''}
+          ${(p.categories || []).map(c => `<span style="display:inline-block;background:#eef6ff;color:#034a86;padding:.15rem .4rem;border-radius:4px;margin-right:.25rem;font-size:.8rem">${escapeHtml(c)}</span>`).join('')}
+        </a>`).join('')}
+    </div>
   </section>`;
 }
 
