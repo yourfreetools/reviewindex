@@ -3,6 +3,18 @@ export async function onRequest(context) {
     const { request, params, env } = context;
     const slug = params.slug;
     
+    // Generate cache key for the entire page
+    const cacheKey = new Request(request.url, request);
+    const cache = caches.default;
+    
+    // Try to get from cache first
+    let response = await cache.match(cacheKey);
+    if (response) {
+        console.log('✅ PAGE Cache HIT for:', slug);
+        return response;
+    }
+    console.log('🔄 PAGE Cache MISS for:', slug);
+    
     try {
         // If it's a direct file request for .md, redirect to proper URL
         if (slug.endsWith('.md')) {
@@ -23,12 +35,11 @@ export async function onRequest(context) {
         // Convert markdown to HTML first
         const htmlContent = convertMarkdownToHTML(content);
         
-        // Get related posts WITH CACHING
-        const relatedPosts = await findRelatedPostsWithCache(
+        // Get related posts (remove KV cache, use simple function)
+        const relatedPosts = await findRelatedPostsFromGitHub(
             currentFrontmatter, 
             slug, 
-            env.GITHUB_TOKEN,
-            env.RELATED_POSTS  // KV namespace
+            env.GITHUB_TOKEN
         );
 
         // Render the post page
@@ -40,13 +51,19 @@ export async function onRequest(context) {
             relatedPosts
         );
         
-        return new Response(fullHtml, {
+        // Create response with cache headers
+        response = new Response(fullHtml, {
             headers: { 
                 'Content-Type': 'text/html; charset=utf-8',
                 'X-Content-Type-Options': 'nosniff',
-                'X-Frame-Options': 'DENY'
+                'X-Frame-Options': 'DENY',
+                'Cache-Control': 'public, max-age=15552000' // 6 months in seconds
             }
         });
+        
+        // Store in cache for future requests
+        context.waitUntil(cache.put(cacheKey, response.clone()));
+        return response;
 
     } catch (error) {
         console.error('Error rendering page:', error);
@@ -54,46 +71,7 @@ export async function onRequest(context) {
     }
 }
 
-// ==================== CACHED RELATED POSTS ====================
-
-async function findRelatedPostsWithCache(currentFrontmatter, currentSlug, githubToken, kvNamespace) {
-    const cacheKey = `related-${currentSlug}`;
-    
-    try {
-        // 1. CHECK CACHE FIRST
-        const cached = await kvNamespace?.get(cacheKey);
-        
-        if (cached) {
-            console.log('✅ Cache HIT for:', currentSlug);
-            return JSON.parse(cached);
-        }
-        
-        console.log('🔄 Cache MISS for:', currentSlug, '- Fetching from GitHub...');
-        
-        // 2. FETCH FRESH DATA FROM GITHUB
-        const relatedPosts = await findRelatedPostsFromGitHub(
-            currentFrontmatter, 
-            currentSlug, 
-            githubToken
-        );
-        
-        // 3. STORE IN CACHE (24 HOURS) - only if KV exists
-        if (relatedPosts.length > 0 && kvNamespace) {
-            await kvNamespace.put(
-                cacheKey, 
-                JSON.stringify(relatedPosts), 
-                { expirationTtl: 86400 } // 24 hours
-            );
-            console.log('💾 Cached', relatedPosts.length, 'related posts for:', currentSlug);
-        }
-        
-        return relatedPosts;
-        
-    } catch (error) {
-        console.error('❌ Cache error for', currentSlug, ':', error);
-        return []; // Return empty array on error
-    }
-}
+// ==================== SIMPLE RELATED POSTS (NO KV) ====================
 
 async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githubToken) {
     try {
@@ -202,6 +180,9 @@ async function fetchAllPostsMetadata(githubToken) {
         return [];
     }
 }
+
+// KEEP ALL YOUR EXISTING HELPER FUNCTIONS BELOW EXACTLY AS THEY ARE
+// (fetchPostContent, parseMarkdown, convertMarkdownToHTML, etc.)
 
 // ==================== EXISTING HELPER FUNCTIONS ====================
 
