@@ -38,7 +38,7 @@ export async function onRequest(context) {
     } else {
       // first view — compute related posts
       const fresh = await findRelatedPostsFromGitHub(frontmatter, slug, env.GITHUB_TOKEN);
-      relatedPosts = (fresh || []).slice(0, 3); // up to 3
+      relatedPosts = (fresh || []).slice(0, 4); // now up to 4 related posts
 
       // save full objects into frontmatter and mark checked: true
       frontmatter.related = relatedPosts.map(p => ({
@@ -76,6 +76,9 @@ export async function onRequest(context) {
     return renderErrorPage('Server Error', 'An error occurred while loading the review.');
   }
 }
+
+// (rest of file unchanged...)
+
 
 
 // -------------------- GitHub file helpers --------------------
