@@ -2,13 +2,30 @@
 title: "Nurse Jamie Uplift Facial Roller 2025 – Honest Review"
 description: "Comprehensive review of the Nurse Jamie Uplift Facial Roller covering features, performance, and value proposition."
 image: "https://www.refinery29.com/images/10452695.jpg"
-rating: 5
+rating: "5"
 affiliateLink: "https://amzn.to/46W1QKU"
 youtubeId: ""
 categories: ["reviews", "beauty"]
 date: "2025-09-25T20:33:56.505Z"
 slug: "nurse-jamie-uplift-facial-roller-2025-honest-review"
 draft: false
+related:
+  - slug: "best-hero-mighty-patch-original-honest-review-2025"
+    title: "Best Hero Mighty Patch Original – Honest Review 2025"
+    description: "Comprehensive review of Hero Cosmetics Mighty Patch Original covering features, performance, and value proposition for fast‐acting acne treatment"
+    image: "https://www.herocosmetics.us/cdn/shop/files/250602_MP_POD_PDP_1.jpg"
+    categories: ["reviews", "beauty"]
+  - slug: "best-paulas-choice-2-bha-liquid-exfoliant-honest-r"
+    title: "Best Paula’s Choice 2% BHA Liquid Exfoliant – Honest Review 2025"
+    description: "Comprehensive review of Paula’s Choice 2% BHA Liquid Exfoliant covering features, performance & value proposition for pores, acne, and skin texture improvement"
+    image: "https://www.spacenk.com/on/demandware.static/-/Library-Sites-spacenk-global/default/dw0b14bb80/paulas-choice-bha-liquid-exfoliant-review-space-nk.jpg"
+    categories: ["reviews", "beauty"]
+  - slug: "samsung-galaxy-ring-2024-review"
+    title: "Samsung Galaxy Ring 2024 - Honest Review"
+    description: "Comprehensive review of the Samsung Galaxy Ring covering design, features, performance, and whether it’s worth the hype in 2024."
+    image: "https://images.samsung.com/is/image/samsung/assets/us/rings/galaxy-ring/images/RingMLP-Hero-KV-Static-Product-M-720x430.jpg"
+    categories: ["reviews"]
+checked: true
 ---
 
 # Nurse Jamie Uplift Facial Roller 2025 – Honest Review
