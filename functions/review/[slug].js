@@ -137,7 +137,7 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
           yamlLines.push(`  - slug: "${escapeYaml(String(obj.slug || ''))}"`);
           yamlLines.push(`    title: "${escapeYaml(String(obj.title || ''))}"`);
           yamlLines.push(`    description: "${escapeYaml(String(obj.description || ''))}"`);
-          yamlLines.push(`    image: "${escapeYaml(String(obj.image || '/default-thumbnail.jpg'))}"`);
+          yamlLines.push(`    image: "${escapeYaml(String(obj.image || ''))}"`);
           const cats = (obj.categories || []).map(c => `"${escapeYaml(String(c))}"`).join(', ');
           yamlLines.push(`    categories: [${cats}]`);
         }
@@ -529,7 +529,7 @@ function escapeHtml(str) {
 async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relatedPosts = []) {
   const canonicalUrl = `https://reviewindex.pages.dev/review/${slug}`;
   const schemaMarkup = generateSchemaMarkup(frontmatter, slug, canonicalUrl);
-  const socialImage = frontmatter.image || 'https://reviewindex.pages.dev/default-social-image.jpg';
+  const socialImage = frontmatter.image || 'https://reviewindex.pages.dev/og-image.jpg';
   const youtubeEmbed = frontmatter.youtubeId ? generateYouTubeEmbed(frontmatter.youtubeId, frontmatter.title || formatSlug(slug)) : '';
   const relatedPostsHTML = generateRelatedPostsHTML(relatedPosts, frontmatter.categories);
 
