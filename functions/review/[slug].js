@@ -22,78 +22,70 @@ export async function onRequest(context) {
     frontmatter = frontmatter || {};
 
     // 3) determine related posts (either from frontmatter or compute & save)
-    let relatedPosts = [];
-    if (frontmatter.checked) {
-      // already checked — use saved values (defensive)
-      const saved = frontmatter.related || [];
-      if (Array.isArray(saved)) {
-        relatedPosts = saved.map(r => ({
-          slug: r.slug,
-          title: r.title || formatSlug(r.slug),
-          description: r.description || '',
-          // FIX: Properly handle image URL - use actual image if available
-          image: r.image && r.image !== '/default-thumbnail.jpg' ? r.image : (await getPostImage(r.slug, env.GITHUB_TOKEN)) || '/default-thumbnail.jpg',
-          categories: r.categories || []
-        }));
-        
-        // If we got empty images, try to refetch them
-        relatedPosts = await Promise.all(
-          relatedPosts.map(async post => {
-            if (!post.image || post.image === '/default-thumbnail.jpg') {
-              const actualImage = await getPostImage(post.slug, env.GITHUB_TOKEN);
-              return { ...post, image: actualImage || '/default-thumbnail.jpg' };
-            }
-            return post;
-          })
-        );
-      }
-    } else {
-      // first view — compute related posts with improved matching
-      const fresh = await findRelatedPostsFromGitHub(frontmatter, slug, env.GITHUB_TOKEN);
-      relatedPosts = (fresh || []).slice(0, 3); // up to 3
+      // 3) determine related posts (either from frontmatter or compute & save)
+let relatedPosts = [];
+if (frontmatter.checked) {
+  // already checked — use saved values (defensive)
+  const saved = frontmatter.related || [];
+  if (Array.isArray(saved)) {
+    relatedPosts = saved.map(r => {
+      // DEBUG: Log what we're reading
+      console.log('Reading related post:', {
+        slug: r.slug,
+        image: r.image,
+        hasImage: !!r.image,
+        imageLength: r.image ? r.image.length : 0
+      });
+      
+      return {
+        slug: r.slug,
+        title: r.title || formatSlug(r.slug),
+        description: r.description || '',
+        // FIX: Only use default if image is truly missing/empty
+        image: (r.image && r.image.trim() !== '') ? r.image : '/default-thumbnail.jpg',
+        categories: r.categories || []
+      };
+    });
+    
+    // Additional debug
+    console.log('Total related posts loaded:', relatedPosts.length);
+    console.log('Images found:', relatedPosts.map(p => p.image));
+  }
+} else {
+  // first view — compute related posts with improved matching
+  const fresh = await findRelatedPostsFromGitHub(frontmatter, slug, env.GITHUB_TOKEN);
+  relatedPosts = (fresh || []).slice(0, 3); // up to 3
 
-      // Only save if we have related posts
-      if (relatedPosts.length > 0) {
-        // Ensure we have proper image URLs before saving
-        relatedPosts = await Promise.all(
-          relatedPosts.map(async post => {
-            if (!post.image || post.image === '/default-thumbnail.jpg') {
-              const actualImage = await getPostImage(post.slug, env.GITHUB_TOKEN);
-              return { ...post, image: actualImage || '/default-thumbnail.jpg' };
-            }
-            return post;
-          })
-        );
+  // Only save if we have related posts
+  if (relatedPosts.length > 0) {
+    frontmatter.related = relatedPosts.map(p => ({
+      slug: p.slug,
+      title: p.title,
+      description: p.description || '',
+      image: p.image || '/default-thumbnail.jpg',
+      categories: p.categories || []
+    }));
+    frontmatter.checked = true;
 
-        frontmatter.related = relatedPosts.map(p => ({
-          slug: p.slug,
-          title: p.title,
-          description: p.description || '',
-          image: p.image || '/default-thumbnail.jpg',
-          categories: p.categories || []
-        }));
-        frontmatter.checked = true;
-
-        try {
-          await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
-          console.log(`✅ Wrote related posts into ${slug}.md`);
-        } catch (err) {
-          console.error('Failed to write related posts to GitHub:', err);
-        }
-      } else {
-        // No related posts found, just mark as checked to avoid recomputation
-        frontmatter.checked = true;
-        frontmatter.related = [];
-        
-        try {
-          await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
-          console.log(`✅ Marked ${slug}.md as checked (no related posts found)`);
-        } catch (err) {
-          console.error('Failed to update file:', err);
-        }
-      }
+    try {
+      await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
+      console.log(`✅ Wrote related posts into ${slug}.md`);
+    } catch (err) {
+      console.error('Failed to write related posts to GitHub:', err);
     }
-
+  } else {
+    // No related posts found, just mark as checked to avoid recomputation
+    frontmatter.checked = true;
+    frontmatter.related = [];
+    
+    try {
+      await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
+      console.log(`✅ Marked ${slug}.md as checked (no related posts found)`);
+    } catch (err) {
+      console.error('Failed to update file:', err);
+    }
+  }
+}  
     // 4) render page
     const htmlContent = convertMarkdownToHTML(content);
     const fullHtml = await renderPostPage(frontmatter, htmlContent, slug, request.url, relatedPosts);
