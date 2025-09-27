@@ -1,5 +1,5 @@
 ---
-title: "Best Samsung Galaxy S25 Ultra 2025 - Honest Review"
+title: "Best Sams25 Ultra 2025 - Honest Review"
 description: "Comprehensive review of Samsung Galaxy S25 Ultra covering features, performance, and value proposition for tech enthusiasts and everyday users."
 image: "https://ik.imagekit.io/ReviewIndex/best-samsung-galaxy-s25-ultra-2025-honest-review.jpg"
 rating: "4"
