@@ -50,7 +50,7 @@ export async function onRequest(context) {
           slug: p.slug,
           title: p.title,
           description: p.description || '',
-          image: p.image || '/default-thumbnail.jpg',
+          image: p.image || '',
           categories: p.categories || []
         }));
         frontmatter.checked = true;
@@ -345,7 +345,7 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
           title: p.title || formatSlug(p.slug),
           slug: p.slug,
           description: p.description || '',
-          image: p.image || '/default-thumbnail.jpg',
+          image: p.image || '/',
           categories: sharedCategories,
           matchCount: sharedCategories.length,
           similarityScore: similarityScore
@@ -731,7 +731,7 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
       ${relatedPosts.map(p => `
         <a class="related-item" href="/review/${encodeURIComponent(p.slug)}" aria-label="${escapeHtml(p.title)}">
           <div class="related-thumbnail">
-            <img src="${escapeHtml(p.image || '/default-thumbnail.jpg')}" alt="${escapeHtml(p.title)}" loading="lazy">
+            <img src="${escapeHtml(p.image || '')}" alt="${escapeHtml(p.title)}" loading="lazy">
           </div>
           <div class="related-content">
             <h3>${escapeHtml(p.title)}</h3>
