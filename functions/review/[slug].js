@@ -36,13 +36,12 @@ export async function onRequest(context) {
         }));
       }
     } else {
-      // first view — compute related posts
+      // first view — compute related posts with improved matching
       const fresh = await findRelatedPostsFromGitHub(frontmatter, slug, env.GITHUB_TOKEN);
       relatedPosts = (fresh || []).slice(0, 3); // up to 3
 
       // Only save if we have related posts
       if (relatedPosts.length > 0) {
-        // save full objects into frontmatter and mark checked: true
         frontmatter.related = relatedPosts.map(p => ({
           slug: p.slug,
           title: p.title,
@@ -52,7 +51,6 @@ export async function onRequest(context) {
         }));
         frontmatter.checked = true;
 
-        // attempt write back to GitHub (do not block render on failure)
         try {
           await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
           console.log(`✅ Wrote related posts into ${slug}.md`);
@@ -353,7 +351,7 @@ function parseArrayInline(text) {
 }
 
 
-// -------------------- Related posts discovery --------------------
+// -------------------- Improved Related posts discovery --------------------
 
 async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githubToken) {
   try {
@@ -365,31 +363,51 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
 
     for (const p of all) {
       if (!p || !p.slug) continue;
-      if (p.slug === currentSlug) continue;
+      if (p.slug === currentSlug) continue; // Exclude current post
       
       const pcats = normalizeCategories(p.categories || []);
-      const matches = currentCats.filter(c => pcats.includes(c));
       
-      // Only include if there are matching categories
-      if (matches.length > 0) {
+      // Calculate similarity score based on shared categories
+      const sharedCategories = currentCats.filter(c => pcats.includes(c));
+      const similarityScore = calculateSimilarityScore(currentCats, pcats, sharedCategories);
+      
+      // Only include if there's meaningful similarity (at least 30% or shared categories)
+      if (similarityScore >= 0.3 || sharedCategories.length > 0) {
         related.push({
           title: p.title || formatSlug(p.slug),
           slug: p.slug,
           description: p.description || '',
-          image: p.image || '/default-thumbnail.jpg', // Use actual image from frontmatter
-          categories: matches,
-          matchCount: matches.length
+          image: p.image || '/default-thumbnail.jpg',
+          categories: sharedCategories, // Only show shared categories
+          matchCount: sharedCategories.length,
+          similarityScore: similarityScore
         });
       }
     }
 
-    // sort by matchCount desc then return
-    related.sort((a, b) => (b.matchCount || 0) - (a.matchCount || 0));
-    return related;
+    // Sort by similarity score (descending) then by match count
+    related.sort((a, b) => {
+      if (b.similarityScore !== a.similarityScore) {
+        return b.similarityScore - a.similarityScore;
+      }
+      return (b.matchCount || 0) - (a.matchCount || 0);
+    });
+    
+    return related.slice(0, 5); // Return top 5 for selection
   } catch (err) {
     console.error('findRelatedPostsFromGitHub error', err);
     return [];
   }
+}
+
+function calculateSimilarityScore(currentCats, otherCats, sharedCats) {
+  if (currentCats.length === 0 || otherCats.length === 0) return 0;
+  
+  // Jaccard similarity coefficient: |A ∩ B| / |A ∪ B|
+  const unionSize = new Set([...currentCats, ...otherCats]).size;
+  const intersectionSize = sharedCats.length;
+  
+  return intersectionSize / unionSize;
 }
 
 async function fetchAllPostsMetadata(githubToken) {
@@ -614,11 +632,68 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
   .category-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.5rem; }
   .category-tag { display: inline-block; background: #eef6ff; color: #034a86; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
   
-  /* Affiliate Link Styles */
-  .affiliate-section { background: linear-gradient(135deg, #fff7ed, #fed7aa); padding: 1.5rem; border-radius: 8px; margin: 2rem 0; text-align: center; border: 1px solid #fdba74; }
-  .affiliate-section p { margin-bottom: 1rem; color: #7c2d12; font-weight: 500; }
-  .affiliate-button { display: inline-block; background: #2563eb; color: #fff; padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2); }
-  .affiliate-button:hover { background: #1d4ed8; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3); }
+  /* Affiliate Link Styles - Updated Design */
+  .affiliate-section { 
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe); 
+    padding: 1.5rem; 
+    border-radius: 12px; 
+    margin: 2rem 0; 
+    text-align: center; 
+    border: 1px solid #bae6fd;
+    position: relative;
+    overflow: hidden;
+  }
+  .affiliate-section::before {
+    content: "💎";
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 1.5rem;
+    opacity: 0.1;
+  }
+  .affiliate-content { position: relative; z-index: 2; }
+  .affiliate-heading { 
+    font-size: 1.2rem; 
+    font-weight: 600; 
+    margin-bottom: 0.75rem; 
+    color: #0369a1;
+  }
+  .affiliate-text { 
+    margin-bottom: 1rem; 
+    color: #475569; 
+    line-height: 1.5;
+    font-size: 0.95rem;
+  }
+  .affiliate-disclosure {
+    background: #f1f5f9;
+    padding: 0.75rem;
+    border-radius: 6px;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+    color: #64748b;
+    border-left: 3px solid #94a3b8;
+  }
+  .affiliate-button { 
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: linear-gradient(135deg, #059669, #10b981);
+    color: #fff; 
+    padding: 1rem 2rem; 
+    border-radius: 8px; 
+    text-decoration: none; 
+    font-weight: 600; 
+    transition: all 0.3s ease; 
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+  }
+  .affiliate-button:hover { 
+    transform: translateY(-2px); 
+    box-shadow: 0 6px 20px rgba(5, 150, 105, 0.4);
+    background: linear-gradient(135deg, #047857, #0d9488);
+  }
   
   /* Back Link */
   .back-nav { text-align: center; margin-top: 2rem; }
@@ -633,6 +708,9 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
     .related-item { flex-direction: column; text-align: center; }
     .related-thumbnail img { width: 100%; height: 150px; }
     .meta-info { font-size: 0.8rem; }
+    .affiliate-section { padding: 1.25rem; }
+    .affiliate-heading { font-size: 1.1rem; }
+    .affiliate-button { padding: 0.875rem 1.5rem; font-size: 1rem; }
   }
   
   @media (max-width: 480px) {
@@ -641,7 +719,8 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
     .content h2 { font-size: 1.3rem; }
     .content h3 { font-size: 1.1rem; }
     .affiliate-section { padding: 1rem; }
-    .affiliate-button { padding: 1rem 1.5rem; width: 100%; }
+    .affiliate-button { padding: 1rem 1.5rem; width: 100%; justify-content: center; }
+    .affiliate-heading { font-size: 1rem; }
   }
 </style>
 </head>
@@ -667,10 +746,16 @@ async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relate
 
     ${frontmatter.affiliateLink ? `
     <aside class="affiliate-section">
-      <p>💡 <strong>Ready to try ${escapeHtml(frontmatter.title || formatSlug(slug))}?</strong> Check the current price and see if it's right for you!</p>
-      <a href="${escapeHtml(frontmatter.affiliateLink)}" target="_blank" rel="nofollow sponsored" class="affiliate-button">
-        Check Current Price → 
-      </a>
+      <div class="affiliate-content">
+        <div class="affiliate-heading">💡 Ready to try ${escapeHtml(frontmatter.title || formatSlug(slug))}?</div>
+        <p class="affiliate-text">Check the current price and see if it's right for you!</p>
+        <a href="${escapeHtml(frontmatter.affiliateLink)}" target="_blank" rel="nofollow sponsored" class="affiliate-button">
+          🔍 Check Current Price →
+        </a>
+        <div class="affiliate-disclosure">
+          <strong>Disclosure:</strong> We earn a commission when you purchase through this link, at no extra cost to you. This helps us maintain our review service.
+        </div>
+      </div>
     </aside>` : ''}
 
     <nav class="back-nav">
@@ -718,8 +803,12 @@ function renderErrorPage(title, message) {
 
 function normalizeCategories(categories) {
   if (!categories) return [];
-  if (Array.isArray(categories)) return categories.map(c => String(c).toLowerCase().trim());
-  return [String(categories).toLowerCase().trim()];
+  if (Array.isArray(categories)) {
+    return categories
+      .map(c => String(c).toLowerCase().trim())
+      .filter(c => c.length > 0); // Remove empty categories
+  }
+  return [String(categories).toLowerCase().trim()].filter(c => c.length > 0);
 }
 
 /* end of file */
