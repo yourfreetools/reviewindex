@@ -33,7 +33,7 @@ export async function onRequest(context) {
             title: r.title || formatSlug(r.slug),
             description: r.description || '',
             // Use the actual image URL from frontmatter
-            image: (r.image && r.image.trim() !== '') ? r.image : '/og-image.jpg',
+            image: r.image,
             categories: r.categories || []
           };
         });
@@ -137,7 +137,7 @@ async function updateMarkdownFileWithRelated(slug, oldContent, frontmatter, gith
           yamlLines.push(`  - slug: "${escapeYaml(String(obj.slug || ''))}"`);
           yamlLines.push(`    title: "${escapeYaml(String(obj.title || ''))}"`);
           yamlLines.push(`    description: "${escapeYaml(String(obj.description || ''))}"`);
-          yamlLines.push(`    image: "${escapeYaml(String(obj.image || ''))}"`);
+          yamlLines.push(`    image: "${escapeYaml(String(obj.image))}"`);
           const cats = (obj.categories || []).map(c => `"${escapeYaml(String(c))}"`).join(', ');
           yamlLines.push(`    categories: [${cats}]`);
         }
@@ -345,7 +345,7 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
           title: p.title || formatSlug(p.slug),
           slug: p.slug,
           description: p.description || '',
-          image: p.image || '',
+          image: p.image,
           categories: sharedCategories,
           matchCount: sharedCategories.length,
           similarityScore: similarityScore
@@ -731,7 +731,7 @@ function generateRelatedPostsHTML(relatedPosts, currentCategories) {
       ${relatedPosts.map(p => `
         <a class="related-item" href="/review/${encodeURIComponent(p.slug)}" aria-label="${escapeHtml(p.title)}">
           <div class="related-thumbnail">
-            <img src="${escapeHtml(p.image || '')}" alt="${escapeHtml(p.title)}" loading="lazy">
+            <img src="${escapeHtml(p.image)}" alt="${escapeHtml(p.title)}" loading="lazy">
           </div>
           <div class="related-content">
             <h3>${escapeHtml(p.title)}</h3>
