@@ -1,5 +1,5 @@
 // functions/review/[...slug].js
-// Fixed version - shows all 4 related posts with titles/descriptions only
+// Fixed version - ensures all 4 related posts are shown
 
 export async function onRequest(context) {
   const { request, params, env } = context;
@@ -20,12 +20,12 @@ export async function onRequest(context) {
     let { frontmatter, content } = parseMarkdown(rawMd);
     frontmatter = frontmatter || {};
 
-    // 3) determine related posts - OPTIMIZED LOGIC
+    // 3) determine related posts - FIXED LOGIC
     let relatedPosts = [];
     
     // Check if we already have pre-computed related posts in frontmatter
     if (frontmatter.checked && Array.isArray(frontmatter.related)) {
-      // Use ALL pre-computed related posts from frontmatter (no API calls needed)
+      // Use ALL pre-computed related posts from frontmatter
       relatedPosts = frontmatter.related.map(r => ({
         slug: r.slug,
         title: r.title || formatSlug(r.slug),
@@ -34,11 +34,14 @@ export async function onRequest(context) {
       }));
       console.log(`✅ Using ${relatedPosts.length} pre-computed related posts for ${slug}`);
     } else {
-      // First view after publishing - compute related posts (this will make API calls)
+      // First view after publishing - compute related posts
       console.log(`🔍 Computing related posts for ${slug} (first view)`);
       const fresh = await findRelatedPostsFromGitHub(frontmatter, slug, env.GITHUB_TOKEN);
-      relatedPosts = (fresh || []).slice(0, 4); // Get up to 4 posts
-
+      
+      // Get all found posts
+      relatedPosts = (fresh || []);
+      console.log(`🔍 Found ${relatedPosts.length} potential related posts`);
+      
       // Save complete related post data
       frontmatter.related = relatedPosts.map(p => ({
         slug: p.slug,
@@ -51,7 +54,7 @@ export async function onRequest(context) {
       // Attempt write back to GitHub
       try {
         await updateMarkdownFileWithRelated(slug, rawMd, frontmatter, env.GITHUB_TOKEN);
-        console.log(`✅ Wrote ${relatedPosts.length} related posts into ${slug}.md - future views will use cached data`);
+        console.log(`✅ Wrote ${relatedPosts.length} related posts into ${slug}.md`);
       } catch (err) {
         console.error('Failed to write related posts to GitHub:', err);
       }
@@ -312,6 +315,9 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
     const currentCats = normalizeCategories(currentFrontmatter.categories || []);
     const related = [];
 
+    console.log(`🔍 Current post categories: ${currentCats.join(', ')}`);
+    console.log(`🔍 Total posts available: ${all.length}`);
+
     for (const p of all) {
       if (!p || !p.slug) continue;
       if (p.slug === currentSlug) continue;
@@ -330,9 +336,35 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
       }
     }
 
+    // Sort by match count (most matches first)
     related.sort((a, b) => (b.matchCount || 0) - (a.matchCount || 0));
-    console.log(`✅ Found ${related.length} related posts for ${currentSlug}`);
-    return related;
+    
+    // If we have fewer than 4 related posts, add some fallback posts
+    if (related.length < 4) {
+      console.log(`⚠️ Only found ${related.length} related posts, adding fallback posts`);
+      
+      // Add recent posts as fallback (excluding current post and already added related posts)
+      const recentPosts = all.filter(p => 
+        p.slug !== currentSlug && 
+        !related.some(r => r.slug === p.slug)
+      ).slice(0, 4 - related.length);
+      
+      for (const p of recentPosts) {
+        related.push({
+          title: p.title || formatSlug(p.slug),
+          slug: p.slug,
+          description: p.description || '',
+          categories: p.categories || [],
+          matchCount: 0 // Fallback posts have 0 matches
+        });
+      }
+    }
+    
+    // Take up to 4 posts
+    const result = related.slice(0, 4);
+    console.log(`✅ Final related posts for ${currentSlug}: ${result.length} posts`);
+    
+    return result;
   } catch (err) {
     console.error('findRelatedPostsFromGitHub error', err);
     return [];
