@@ -249,19 +249,16 @@ function escapeYaml(s) {
 
 // -------------------- Simple YAML frontmatter parser --------------------
 
-function parseMarkdown(md) {
-  const result = { frontmatter: {}, content: md };
-  if (!md || !md.startsWith('---')) return result;
-
-  const endIndex = md.indexOf('---', 3);
-  if (endIndex === -1) return result;
-
-  const yamlBlock = md.substring(3, endIndex).trim();
-  const body = md.substring(endIndex + 3).trim();
-
-  result.content = body;
-  result.frontmatter = parseYAMLBlock(yamlBlock);
-  return result;
+function parseValue(s) {
+  if (typeof s !== 'string') return s;
+  const t = s.trim();
+  if (t === '') return '';
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+    // Properly unescape the quoted string
+    return t.substring(1, t.length - 1).replace(/\\"/g, '"').replace(/\\'/g, "'");
+  }
+  if (/^(true|false)$/i.test(t)) return t.toLowerCase() === 'true';
+  return t;
 }
 
 function parseYAMLBlock(yaml) {
