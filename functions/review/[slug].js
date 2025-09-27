@@ -33,7 +33,7 @@ export async function onRequest(context) {
             title: r.title || formatSlug(r.slug),
             description: r.description || '',
             // Use the actual image URL from frontmatter
-            image: (r.image && r.image.trim() !== '') ? r.image : '/default-thumbnail.jpg',
+            image: (r.image && r.image.trim() !== '') ? r.image : '/og-image.jpg',
             categories: r.categories || []
           };
         });
@@ -345,7 +345,7 @@ async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githu
           title: p.title || formatSlug(p.slug),
           slug: p.slug,
           description: p.description || '',
-          image: p.image || '/',
+          image: p.image || '',
           categories: sharedCategories,
           matchCount: sharedCategories.length,
           similarityScore: similarityScore
