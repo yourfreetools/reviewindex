@@ -34,7 +34,7 @@ export async function onRequestPost(context) {
             finalVerdict, 
             pros, 
             cons,
-            relatedContent  // NEW: Added relatedContent field
+            relatedContent
         } = formData;
 
         if (!title?.trim() || !filename?.trim()) {
@@ -59,7 +59,7 @@ export async function onRequestPost(context) {
             finalVerdict: finalVerdict?.trim(),
             pros: pros?.trim(),
             cons: cons?.trim(),
-            relatedContent: relatedContent?.trim()  // NEW: Added relatedContent
+            relatedContent: relatedContent?.trim()
         });
 
         const result = await publishToGitHub({
@@ -85,7 +85,7 @@ export async function onRequestPost(context) {
     }
 }
 
-// NEW: Function to update posts-index.json
+// NEW: Improved function to update posts-index.json
 async function updatePostsIndex({ token, title, filename, slug }) {
     try {
         const REPO_OWNER = 'yourfreetools';
@@ -93,54 +93,80 @@ async function updatePostsIndex({ token, title, filename, slug }) {
         const postsIndexPath = 'content/posts-index.json';
         const currentDate = new Date().toISOString();
         
-        // First, try to get the existing posts index
-        let existingIndex = { posts: [] };
+        console.log('🔄 Starting posts index update...');
         
+        // Initialize with empty posts array
+        let existingIndex = { posts: [] };
+        let existingSha = null;
+
+        // Try to get existing posts index file
         try {
+            console.log('📖 Fetching existing posts index...');
             const getResponse = await fetch(
                 `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${postsIndexPath}`,
                 {
-                    method: 'GET',
                     headers: {
-                        'Authorization': `token ${token}`,
-                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github.v3+json',
                         'User-Agent': 'Review-Index-App'
                     }
                 }
             );
 
-            if (getResponse.ok) {
+            if (getResponse.status === 200) {
                 const data = await getResponse.json();
-                const content = atob(data.content);
+                console.log('✅ Found existing posts index');
+                existingSha = data.sha;
+                
+                // Decode the content
+                const content = atob(data.content.replace(/\n/g, ''));
                 existingIndex = JSON.parse(content);
+                console.log(`📊 Existing index has ${existingIndex.posts?.length || 0} posts`);
+            } else if (getResponse.status === 404) {
+                console.log('📝 No existing posts index found, will create new one');
+            } else {
+                console.warn(`⚠️ Unexpected status when fetching index: ${getResponse.status}`);
             }
         } catch (error) {
-            console.log('Posts index not found, creating new one...');
+            console.log('📝 No existing posts index file, creating new one...');
+        }
+
+        // Ensure posts array exists
+        if (!existingIndex.posts) {
+            existingIndex.posts = [];
         }
 
         // Create new post entry
+        const finalFilename = filename.endsWith('.md') ? filename : `${filename}.md`;
         const newPost = {
             title: title,
             slug: slug,
-            filename: filename.endsWith('.md') ? filename : `${filename}.md`,
+            filename: finalFilename,
             date: currentDate,
             lastmod: currentDate,
             url: `https://reviewindex.pages.dev/review/${filename.replace('.md', '')}`
         };
 
-        // Check if post already exists (update) or is new (add)
-        const existingPostIndex = existingIndex.posts.findIndex(post => post.filename === newPost.filename);
+        console.log(`📝 Processing post: ${title}`);
+
+        // Check if post already exists
+        const existingPostIndex = existingIndex.posts.findIndex(post => 
+            post.filename === finalFilename || post.slug === slug
+        );
         
         if (existingPostIndex !== -1) {
             // Update existing post
+            console.log('🔄 Updating existing post in index');
             existingIndex.posts[existingPostIndex] = newPost;
         } else {
             // Add new post to the beginning of the array (newest first)
+            console.log('➕ Adding new post to index');
             existingIndex.posts.unshift(newPost);
         }
 
         // Keep only the latest 1000 posts to prevent file from getting too large
         if (existingIndex.posts.length > 1000) {
+            console.log('✂️ Trimming posts array to 1000 entries');
             existingIndex.posts = existingIndex.posts.slice(0, 1000);
         }
 
@@ -148,25 +174,18 @@ async function updatePostsIndex({ token, title, filename, slug }) {
         const updatedContent = JSON.stringify(existingIndex, null, 2);
         const encodedContent = btoa(unescape(encodeURIComponent(updatedContent)));
 
-        // Get the current SHA if file exists
-        let sha = undefined;
-        try {
-            const getResponse = await fetch(
-                `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${postsIndexPath}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `token ${token}`,
-                        'User-Agent': 'Review-Index-App'
-                    }
-                }
-            );
-            if (getResponse.ok) {
-                const data = await getResponse.json();
-                sha = data.sha;
-            }
-        } catch (error) {
-            // File doesn't exist, that's fine - we'll create it
+        console.log('📤 Uploading updated posts index to GitHub...');
+
+        // Prepare the request body
+        const requestBody = {
+            message: `Update posts index: ${title}`,
+            content: encodedContent,
+            branch: 'main'
+        };
+
+        // Add SHA if we're updating an existing file
+        if (existingSha) {
+            requestBody.sha = existingSha;
         }
 
         // Update the posts index file
@@ -175,23 +194,20 @@ async function updatePostsIndex({ token, title, filename, slug }) {
             {
                 method: 'PUT',
                 headers: {
-                    'Authorization': `token ${token}`,
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
                     'Content-Type': 'application/json',
                     'User-Agent': 'Review-Index-App'
                 },
-                body: JSON.stringify({
-                    message: `Update posts index: ${title}`,
-                    content: encodedContent,
-                    sha: sha,
-                    branch: 'main'
-                })
+                body: JSON.stringify(requestBody)
             }
         );
 
+        const responseData = await updateResponse.json();
+
         if (!updateResponse.ok) {
-            const errorData = await updateResponse.json();
-            console.error('Failed to update posts index:', errorData);
-            throw new Error(`Failed to update posts index: ${errorData.message}`);
+            console.error('❌ GitHub API error:', responseData);
+            throw new Error(`GitHub API error: ${responseData.message || updateResponse.status}`);
         }
 
         console.log('✅ Posts index updated successfully');
@@ -211,7 +227,14 @@ function errorResponse(message, status = 500, headers) {
 }
 
 function successResponse(data, headers) {
-    return new Response(JSON.stringify({ success: true, message: '🎉 SEO-optimized review published successfully!', data }), { status: 200, headers: { ...headers, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ 
+        success: true, 
+        message: '🎉 SEO-optimized review published successfully!', 
+        data 
+    }), { 
+        status: 200, 
+        headers: { ...headers, 'Content-Type': 'application/json' } 
+    });
 }
 
 // Markdown generator (Neutrogena style, affiliateLink only in frontmatter)
@@ -226,19 +249,17 @@ function generateSEOMarkdown(data) {
     const prosList = data.pros?.split('\n').filter(p => p.trim()).map(p => `- ${p.trim()}`).join('\n');
     const consList = data.cons?.split('\n').filter(c => c.trim()).map(c => `- ${c.trim()}`).join('\n');
     
-    // NEW: Generate related content section
     const relatedContentList = data.relatedContent?.split('\n')
         .filter(url => url.trim())
         .map(url => {
             const cleanUrl = url.trim();
-            // Extract a readable title from the URL or use the URL itself
             const title = cleanUrl.replace(/^https?:\/\//, '')
                                 .replace(/\/$/, '')
                                 .split('/')
                                 .pop()
                                 .replace(/-/g, ' ')
-                                .replace(/\.[^/.]+$/, '') // Remove file extension
-                                .replace(/\b\w/g, l => l.toUpperCase()); // Capitalize words
+                                .replace(/\.[^/.]+$/, '')
+                                .replace(/\b\w/g, l => l.toUpperCase());
             return `- [${title}](${cleanUrl})`;
         })
         .join('\n');
@@ -315,13 +336,26 @@ async function publishToGitHub({ token, content, title, filename }) {
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${filePath}`, 
         {
             method: 'PUT',
-            headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json', 'User-Agent': 'Review-Index-App' },
-            body: JSON.stringify({ message: `Add review: ${title}`, content: encodedContent, branch: 'main' })
+            headers: { 
+                'Authorization': `Bearer ${token}`, 
+                'Content-Type': 'application/json', 
+                'User-Agent': 'Review-Index-App' 
+            },
+            body: JSON.stringify({ 
+                message: `Add review: ${title}`, 
+                content: encodedContent, 
+                branch: 'main' 
+            })
         }
     );
 
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || `GitHub API error: ${response.status}`);
 
-    return { sha: data.content.sha, url: data.content.html_url, path: filePath, siteUrl: `https://reviewindex.pages.dev/review/${filename.replace('.md','')}` };
-          }
+    return { 
+        sha: data.content.sha, 
+        url: data.content.html_url, 
+        path: filePath, 
+        siteUrl: `https://reviewindex.pages.dev/review/${filename.replace('.md','')}` 
+    };
+                }
