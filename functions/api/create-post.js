@@ -118,17 +118,18 @@ async function updatePostsIndex({ token, title, filename, slug }) {
                 console.log('✅ Found existing posts index');
                 existingSha = data.sha;
                 
-                // Decode the content
-                const content = atob(data.content.replace(/\n/g, ''));
+                // FIXED: Proper base64 decoding
+                const content = atob(data.content);
                 existingIndex = JSON.parse(content);
                 console.log(`📊 Existing index has ${existingIndex.posts?.length || 0} posts`);
             } else if (getResponse.status === 404) {
                 console.log('📝 No existing posts index found, will create new one');
             } else {
                 console.warn(`⚠️ Unexpected status when fetching index: ${getResponse.status}`);
+                // Don't throw, just continue with empty index
             }
         } catch (error) {
-            console.log('📝 No existing posts index file, creating new one...');
+            console.log('📝 No existing posts index file or error reading, creating new one...', error.message);
         }
 
         // Ensure posts array exists
@@ -172,7 +173,8 @@ async function updatePostsIndex({ token, title, filename, slug }) {
 
         // Convert to JSON and encode for GitHub
         const updatedContent = JSON.stringify(existingIndex, null, 2);
-        const encodedContent = btoa(unescape(encodeURIComponent(updatedContent)));
+        // FIXED: Proper base64 encoding
+        const encodedContent = btoa(updatedContent);
 
         console.log('📤 Uploading updated posts index to GitHub...');
 
@@ -203,9 +205,8 @@ async function updatePostsIndex({ token, title, filename, slug }) {
             }
         );
 
-        const responseData = await updateResponse.json();
-
         if (!updateResponse.ok) {
+            const responseData = await updateResponse.json();
             console.error('❌ GitHub API error:', responseData);
             throw new Error(`GitHub API error: ${responseData.message || updateResponse.status}`);
         }
@@ -358,4 +359,4 @@ async function publishToGitHub({ token, content, title, filename }) {
         path: filePath, 
         siteUrl: `https://reviewindex.pages.dev/review/${filename.replace('.md','')}` 
     };
-                }
+            }
