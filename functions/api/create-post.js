@@ -14,8 +14,10 @@ export async function onRequestPost(context) {
     }
 
     try {
+        // Access environment variables properly in Cloudflare Pages
         const { GITHUB_TOKEN } = context.env;
         if (!GITHUB_TOKEN) {
+            console.error('❌ GITHUB_TOKEN not found in environment');
             return errorResponse('GITHUB_TOKEN not configured', 500, corsHeaders);
         }
 
@@ -69,15 +71,20 @@ export async function onRequestPost(context) {
             filename: filename.trim()
         });
 
-        // NEW: Update posts index after successful post creation
-        await updatePostsIndex({
+        // Update posts index after successful post creation
+        const indexUpdated = await updatePostsIndex({
             token: GITHUB_TOKEN,
             title: title.trim(),
             filename: filename.trim(),
             slug: generateSlug(title.trim())
         });
 
-        return successResponse(result, corsHeaders);
+        console.log(`📝 Posts index update ${indexUpdated ? 'successful' : 'failed'}`);
+
+        return successResponse({
+            ...result,
+            indexUpdated
+        }, corsHeaders);
 
     } catch (error) {
         console.error('💥 Function Error:', error);
@@ -85,7 +92,7 @@ export async function onRequestPost(context) {
     }
 }
 
-// NEW: Improved function to update posts-index.json
+// Function to update posts-index.json
 async function updatePostsIndex({ token, title, filename, slug }) {
     try {
         const REPO_OWNER = 'yourfreetools';
@@ -95,60 +102,68 @@ async function updatePostsIndex({ token, title, filename, slug }) {
         
         console.log('🔄 Starting posts index update...');
         
-        // Initialize with empty posts array
         let existingIndex = { posts: [] };
         let existingSha = null;
 
         // Try to get existing posts index file
         try {
-            console.log('📖 Fetching existing posts index...');
+            console.log('📖 Fetching existing posts index from GitHub...');
             const getResponse = await fetch(
                 `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${postsIndexPath}`,
                 {
                     headers: {
-                        'Authorization': `Bearer ${token}`,
+                        'Authorization': `token ${token}`, // Use token instead of Bearer for GitHub
                         'Accept': 'application/vnd.github.v3+json',
                         'User-Agent': 'Review-Index-App'
                     }
                 }
             );
 
+            console.log(`📡 GitHub GET response status: ${getResponse.status}`);
+            
             if (getResponse.status === 200) {
                 const data = await getResponse.json();
                 console.log('✅ Found existing posts index');
                 existingSha = data.sha;
                 
-                // FIXED: Proper base64 decoding
-                const content = atob(data.content);
-                existingIndex = JSON.parse(content);
-                console.log(`📊 Existing index has ${existingIndex.posts?.length || 0} posts`);
+                // Decode the content - handle potential encoding issues
+                try {
+                    const content = atob(data.content);
+                    existingIndex = JSON.parse(content);
+                    console.log(`📊 Existing index has ${existingIndex.posts?.length || 0} posts`);
+                } catch (parseError) {
+                    console.error('❌ Error parsing existing index, starting fresh:', parseError);
+                    existingIndex = { posts: [] };
+                }
             } else if (getResponse.status === 404) {
                 console.log('📝 No existing posts index found, will create new one');
             } else {
                 console.warn(`⚠️ Unexpected status when fetching index: ${getResponse.status}`);
-                // Don't throw, just continue with empty index
+                const errorText = await getResponse.text();
+                console.warn(`⚠️ Error response: ${errorText.substring(0, 200)}`);
             }
         } catch (error) {
-            console.log('📝 No existing posts index file or error reading, creating new one...', error.message);
+            console.log('📝 Error fetching existing index, creating new one...', error.message);
         }
 
         // Ensure posts array exists
-        if (!existingIndex.posts) {
+        if (!Array.isArray(existingIndex.posts)) {
             existingIndex.posts = [];
         }
 
         // Create new post entry
         const finalFilename = filename.endsWith('.md') ? filename : `${filename}.md`;
+        const cleanFilename = finalFilename.replace('.md', '');
         const newPost = {
             title: title,
             slug: slug,
             filename: finalFilename,
             date: currentDate,
             lastmod: currentDate,
-            url: `https://reviewindex.pages.dev/review/${filename.replace('.md', '')}`
+            url: `https://reviewindex.pages.dev/review/${cleanFilename}`
         };
 
-        console.log(`📝 Processing post: ${title}`);
+        console.log(`📝 Processing post: "${title}" -> ${cleanFilename}`);
 
         // Check if post already exists
         const existingPostIndex = existingIndex.posts.findIndex(post => 
@@ -156,25 +171,26 @@ async function updatePostsIndex({ token, title, filename, slug }) {
         );
         
         if (existingPostIndex !== -1) {
-            // Update existing post
             console.log('🔄 Updating existing post in index');
             existingIndex.posts[existingPostIndex] = newPost;
         } else {
-            // Add new post to the beginning of the array (newest first)
             console.log('➕ Adding new post to index');
-            existingIndex.posts.unshift(newPost);
+            existingIndex.posts.unshift(newPost); // Add to beginning (newest first)
         }
 
-        // Keep only the latest 1000 posts to prevent file from getting too large
+        // Keep only the latest posts to prevent file from getting too large
         if (existingIndex.posts.length > 1000) {
             console.log('✂️ Trimming posts array to 1000 entries');
             existingIndex.posts = existingIndex.posts.slice(0, 1000);
         }
 
+        console.log(`📚 Total posts in index: ${existingIndex.posts.length}`);
+
         // Convert to JSON and encode for GitHub
         const updatedContent = JSON.stringify(existingIndex, null, 2);
-        // FIXED: Proper base64 encoding
-        const encodedContent = btoa(updatedContent);
+        
+        // Use proper base64 encoding for GitHub
+        const encodedContent = btoa(unescape(encodeURIComponent(updatedContent)));
 
         console.log('📤 Uploading updated posts index to GitHub...');
 
@@ -188,6 +204,9 @@ async function updatePostsIndex({ token, title, filename, slug }) {
         // Add SHA if we're updating an existing file
         if (existingSha) {
             requestBody.sha = existingSha;
+            console.log('📝 Updating existing file with SHA');
+        } else {
+            console.log('📝 Creating new file');
         }
 
         // Update the posts index file
@@ -196,7 +215,7 @@ async function updatePostsIndex({ token, title, filename, slug }) {
             {
                 method: 'PUT',
                 headers: {
-                    'Authorization': `Bearer ${token}`,
+                    'Authorization': `token ${token}`,
                     'Accept': 'application/vnd.github.v3+json',
                     'Content-Type': 'application/json',
                     'User-Agent': 'Review-Index-App'
@@ -205,26 +224,37 @@ async function updatePostsIndex({ token, title, filename, slug }) {
             }
         );
 
+        console.log(`📡 GitHub PUT response status: ${updateResponse.status}`);
+
         if (!updateResponse.ok) {
-            const responseData = await updateResponse.json();
-            console.error('❌ GitHub API error:', responseData);
-            throw new Error(`GitHub API error: ${responseData.message || updateResponse.status}`);
+            const errorData = await updateResponse.json();
+            console.error('❌ GitHub API error:', {
+                status: updateResponse.status,
+                message: errorData.message,
+                documentation: errorData.documentation_url
+            });
+            throw new Error(`GitHub API error: ${errorData.message || updateResponse.status}`);
         }
 
         console.log('✅ Posts index updated successfully');
         return true;
 
     } catch (error) {
-        console.error('❌ Error updating posts index:', error);
+        console.error('❌ Error updating posts index:', error.message);
         // Don't throw the error - we don't want to fail the main post creation
-        // if the index update fails
         return false;
     }
 }
 
 // Helpers
 function errorResponse(message, status = 500, headers) {
-    return new Response(JSON.stringify({ success: false, message }), { status, headers: { ...headers, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ 
+        success: false, 
+        message 
+    }), { 
+        status, 
+        headers: { ...headers, 'Content-Type': 'application/json' } 
+    });
 }
 
 function successResponse(data, headers) {
@@ -238,7 +268,7 @@ function successResponse(data, headers) {
     });
 }
 
-// Markdown generator (Neutrogena style, affiliateLink only in frontmatter)
+// Markdown generator
 function generateSEOMarkdown(data) {
     const currentDate = new Date().toISOString();
     const formattedDate = currentDate.split('T')[0];
@@ -323,7 +353,11 @@ ${relatedContentList}
 }
 
 function generateSlug(title) {
-    return title.toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').substring(0, 60);
+    return title.toLowerCase()
+        .replace(/[^a-z0-9 -]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .substring(0, 60);
 }
 
 async function publishToGitHub({ token, content, title, filename }) {
@@ -331,6 +365,8 @@ async function publishToGitHub({ token, content, title, filename }) {
     const REPO_NAME = 'reviewindex';
     const finalFilename = filename.endsWith('.md') ? filename : `${filename}.md`;
     const filePath = `content/reviews/${finalFilename}`;
+    
+    // Use proper base64 encoding for GitHub
     const encodedContent = btoa(unescape(encodeURIComponent(content)));
 
     const response = await fetch(
@@ -338,7 +374,7 @@ async function publishToGitHub({ token, content, title, filename }) {
         {
             method: 'PUT',
             headers: { 
-                'Authorization': `Bearer ${token}`, 
+                'Authorization': `token ${token}`, 
                 'Content-Type': 'application/json', 
                 'User-Agent': 'Review-Index-App' 
             },
@@ -351,7 +387,10 @@ async function publishToGitHub({ token, content, title, filename }) {
     );
 
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || `GitHub API error: ${response.status}`);
+    if (!response.ok) {
+        console.error('❌ GitHub publish error:', data);
+        throw new Error(data.message || `GitHub API error: ${response.status}`);
+    }
 
     return { 
         sha: data.content.sha, 
@@ -359,4 +398,4 @@ async function publishToGitHub({ token, content, title, filename }) {
         path: filePath, 
         siteUrl: `https://reviewindex.pages.dev/review/${filename.replace('.md','')}` 
     };
-            }
+                                 }
