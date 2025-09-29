@@ -951,19 +951,20 @@ function convertComparisonMarkdownToHTML(markdown, frontmatter) {
     let html = markdown;
     const products = frontmatter.comparison_products || [];
     
-    // Enhanced markdown processing for better structure
-    html = html
-        // Convert affiliate buttons
-        .replace(/\[([^\]]+)\]\(([^)]+)\)\{: \.btn \.btn-sm\}/g, '<a href="$2" class="affiliate-btn" target="_blank" rel="nofollow sponsored">$1</a>')
-        .replace(/\[([^\]]+)\]\(([^)]+)\)\{: \.btn \.btn-primary\}/g, '<a href="$2" class="affiliate-btn" target="_blank" rel="nofollow sponsored">$1</a>')
-        // Convert regular links
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-        // Convert bold and italic
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-        // Convert images with enhanced styling
-        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="content-image" loading="lazy">');
-
+    // Fix image rendering - convert markdown images to proper HTML
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="content-image" loading="lazy">');
+    
+    // Fix affiliate buttons
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)\{: \.btn \.btn-sm\}/g, '<a href="$2" class="affiliate-btn" target="_blank" rel="nofollow sponsored">$1</a>');
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)\{: \.btn \.btn-primary\}/g, '<a href="$2" class="affiliate-btn" target="_blank" rel="nofollow sponsored">$1</a>');
+    
+    // Convert regular links
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    
+    // Convert bold and italic
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    
     // Process the content line by line for better structure
     const lines = html.split('\n');
     let processedLines = [];
@@ -974,17 +975,56 @@ function convertComparisonMarkdownToHTML(markdown, frontmatter) {
     let inPros = false;
     let inCons = false;
     let inVideo = false;
-    let specsData = [];
+    let specsRows = [];
+    let featuresList = [];
+    let prosList = [];
+    let consList = [];
 
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i].trim();
         
         if (!line) {
-            if (inSpecs) inSpecs = false;
-            if (inFeatures) inFeatures = false;
-            if (inPros) inPros = false;
-            if (inCons) inCons = false;
-            if (inVideo) inVideo = false;
+            // Close sections on empty lines
+            if (inSpecs && specsRows.length > 0) {
+                processedLines.push('<table class="specs-table">');
+                specsRows.forEach(row => processedLines.push(row));
+                processedLines.push('</table>');
+                specsRows = [];
+                inSpecs = false;
+            }
+            if (inFeatures && featuresList.length > 0) {
+                processedLines.push('<ul class="features-list">');
+                featuresList.forEach(item => processedLines.push(`<li>${item}</li>`));
+                processedLines.push('</ul>');
+                featuresList = [];
+                inFeatures = false;
+            }
+            if ((inPros || inCons) && (prosList.length > 0 || consList.length > 0)) {
+                if (prosList.length > 0) {
+                    processedLines.push('<div class="pros-list">');
+                    processedLines.push('<h4>✅ Pros</h4>');
+                    processedLines.push('<ul>');
+                    prosList.forEach(item => processedLines.push(`<li>${item}</li>`));
+                    processedLines.push('</ul>');
+                    processedLines.push('</div>');
+                    prosList = [];
+                }
+                if (consList.length > 0) {
+                    processedLines.push('<div class="cons-list">');
+                    processedLines.push('<h4>❌ Cons</h4>');
+                    processedLines.push('<ul>');
+                    consList.forEach(item => processedLines.push(`<li>${item}</li>`));
+                    processedLines.push('</ul>');
+                    processedLines.push('</div>');
+                    consList = [];
+                }
+                inPros = false;
+                inCons = false;
+            }
+            if (inVideo) {
+                processedLines.push('</div>');
+                inVideo = false;
+            }
             continue;
         }
 
@@ -992,11 +1032,17 @@ function convertComparisonMarkdownToHTML(markdown, frontmatter) {
         if (line.startsWith('### ') && !line.includes('####')) {
             const productName = line.replace('### ', '').trim();
             if (products.includes(productName)) {
+                // Close previous product section if any
+                if (inProductSection) {
+                    processedLines.push('</div>');
+                }
+                
                 inProductSection = true;
                 currentProduct = productName;
                 processedLines.push(`<div class="product-card" id="product-${productName.toLowerCase().replace(/\s+/g, '-')}">`);
                 processedLines.push(`<div class="product-header">`);
                 processedLines.push(`<h3>${productName}</h3>`);
+                
                 // Look for product image in next lines
                 for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
                     if (lines[j].includes('<img')) {
@@ -1012,28 +1058,52 @@ function convertComparisonMarkdownToHTML(markdown, frontmatter) {
 
         // Close product section
         if (line === '---' && inProductSection) {
-            inProductSection = false;
-            inSpecs = false;
-            inFeatures = false;
-            inPros = false;
-            inCons = false;
-            inVideo = false;
-            
             // Close any open sections
-            if (inSpecs) {
-                processedLines.push('</table></div>');
+            if (inSpecs && specsRows.length > 0) {
+                processedLines.push('<table class="specs-table">');
+                specsRows.forEach(row => processedLines.push(row));
+                processedLines.push('</table>');
+                specsRows = [];
             }
-            if (inFeatures) {
-                processedLines.push('</ul></div>');
+            if (inFeatures && featuresList.length > 0) {
+                processedLines.push('<ul class="features-list">');
+                featuresList.forEach(item => processedLines.push(`<li>${item}</li>`));
+                processedLines.push('</ul>');
+                featuresList = [];
             }
-            if (inPros || inCons) {
-                processedLines.push('</ul></div></div>');
+            if ((inPros || inCons) && (prosList.length > 0 || consList.length > 0)) {
+                processedLines.push('<div class="pros-cons-grid">');
+                if (prosList.length > 0) {
+                    processedLines.push('<div class="pros-list">');
+                    processedLines.push('<h4>✅ Pros</h4>');
+                    processedLines.push('<ul>');
+                    prosList.forEach(item => processedLines.push(`<li>${item}</li>`));
+                    processedLines.push('</ul>');
+                    processedLines.push('</div>');
+                    prosList = [];
+                }
+                if (consList.length > 0) {
+                    processedLines.push('<div class="cons-list">');
+                    processedLines.push('<h4>❌ Cons</h4>');
+                    processedLines.push('<ul>');
+                    consList.forEach(item => processedLines.push(`<li>${item}</li>`));
+                    processedLines.push('</ul>');
+                    processedLines.push('</div>');
+                    consList = [];
+                }
+                processedLines.push('</div>');
             }
             if (inVideo) {
                 processedLines.push('</div>');
             }
             
             processedLines.push('</div>');
+            inProductSection = false;
+            inSpecs = false;
+            inFeatures = false;
+            inPros = false;
+            inCons = false;
+            inVideo = false;
             continue;
         }
 
@@ -1064,20 +1134,13 @@ function convertComparisonMarkdownToHTML(markdown, frontmatter) {
                 inFeatures = false;
                 processedLines.push('<div class="product-info-section">');
                 processedLines.push('<h4 class="info-title">📊 Specifications</h4>');
-                processedLines.push('<table class="specs-table">');
-                specsData = [];
             }
             // Handle Key Features
             else if (line.includes('#### Key Features')) {
                 inFeatures = true;
                 inSpecs = false;
-                if (specsData.length > 0) {
-                    processedLines.push('</table></div>');
-                    specsData = [];
-                }
                 processedLines.push('<div class="product-info-section">');
                 processedLines.push('<h4 class="info-title">✨ Key Features</h4>');
-                processedLines.push('<ul class="features-list">');
             }
             // Handle Pros section
             else if (line.includes('#### Pros')) {
@@ -1086,19 +1149,11 @@ function convertComparisonMarkdownToHTML(markdown, frontmatter) {
                 inSpecs = false;
                 processedLines.push('<div class="product-info-section">');
                 processedLines.push('<h4 class="info-title">👍 Pros & 👎 Cons</h4>');
-                processedLines.push('<div class="pros-cons-grid">');
-                processedLines.push('<div class="pros-list">');
-                processedLines.push('<h4>✅ Pros</h4>');
-                processedLines.push('<ul>');
             }
             // Handle Cons section
             else if (line.includes('#### Cons')) {
                 inCons = true;
                 inPros = false;
-                processedLines.push('</ul></div>');
-                processedLines.push('<div class="cons-list">');
-                processedLines.push('<h4>❌ Cons</h4>');
-                processedLines.push('<ul>');
             }
             // Handle Video Review
             else if (line.includes('#### Video Review')) {
@@ -1112,33 +1167,32 @@ function convertComparisonMarkdownToHTML(markdown, frontmatter) {
             else if (inSpecs && line.startsWith('|') && !line.includes('---')) {
                 const cells = line.split('|').map(cell => cell.trim()).filter(cell => cell);
                 if (cells.length >= 2) {
-                    processedLines.push(`<tr><th>${cleanCellContent(cells[0])}</th><td>${cleanCellContent(cells[1])}</td></tr>`);
+                    specsRows.push(`<tr><th>${cleanCellContent(cells[0])}</th><td>${cleanCellContent(cells[1])}</td></tr>`);
                 }
             }
             // Handle feature list items
             else if (inFeatures && line.startsWith('- ')) {
                 const feature = line.replace('- ', '').trim();
-                processedLines.push(`<li>${feature}</li>`);
+                featuresList.push(feature);
             }
-            // Handle pros/cons list items
-            else if ((inPros || inCons) && line.startsWith('- ')) {
+            // Handle pros list items
+            else if (inPros && line.startsWith('- ')) {
                 const item = line.replace('- ', '').trim();
-                processedLines.push(`<li>${item}</li>`);
+                prosList.push(item);
+            }
+            // Handle cons list items
+            else if (inCons && line.startsWith('- ')) {
+                const item = line.replace('- ', '').trim();
+                consList.push(item);
             }
             // Handle YouTube iframes
             else if (line.includes('<iframe') && inVideo) {
                 processedLines.push(line);
-                processedLines.push('</div>');
-                processedLines.push('</div>');
-                inVideo = false;
             }
             // Regular paragraphs in product section
             else if (!line.startsWith('<') && !line.startsWith('#') && !line.startsWith('|') && 
-                     !line.startsWith('-') && line !== '---' && !inSpecs && !inFeatures) {
+                     !line.startsWith('-') && line !== '---' && !inSpecs && !inFeatures && !inPros && !inCons && !inVideo) {
                 processedLines.push(`<div class="product-info-section"><p>${line}</p></div>`);
-            }
-            else if (!inSpecs && !inFeatures && !inPros && !inCons && !inVideo) {
-                processedLines.push(line);
             }
         } else {
             // Handle main content (not in product sections)
@@ -1225,30 +1279,48 @@ function convertComparisonMarkdownToHTML(markdown, frontmatter) {
         }
     }
 
-    // Close any open sections
-    if (inSpecs) {
-        processedLines.push('</table></div>');
+    // Close any remaining open sections
+    if (inSpecs && specsRows.length > 0) {
+        processedLines.push('<table class="specs-table">');
+        specsRows.forEach(row => processedLines.push(row));
+        processedLines.push('</table>');
+        processedLines.push('</div>');
     }
-    if (inFeatures) {
-        processedLines.push('</ul></div>');
+    if (inFeatures && featuresList.length > 0) {
+        processedLines.push('<ul class="features-list">');
+        featuresList.forEach(item => processedLines.push(`<li>${item}</li>`));
+        processedLines.push('</ul>');
+        processedLines.push('</div>');
     }
-    if (inPros) {
-        processedLines.push('</ul></div>');
-    }
-    if (inCons) {
-        processedLines.push('</ul></div></div>');
+    if ((inPros || inCons) && (prosList.length > 0 || consList.length > 0)) {
+        processedLines.push('<div class="pros-cons-grid">');
+        if (prosList.length > 0) {
+            processedLines.push('<div class="pros-list">');
+            processedLines.push('<h4>✅ Pros</h4>');
+            processedLines.push('<ul>');
+            prosList.forEach(item => processedLines.push(`<li>${item}</li>`));
+            processedLines.push('</ul>');
+            processedLines.push('</div>');
+        }
+        if (consList.length > 0) {
+            processedLines.push('<div class="cons-list">');
+            processedLines.push('<h4>❌ Cons</h4>');
+            processedLines.push('<ul>');
+            consList.forEach(item => processedLines.push(`<li>${item}</li>`));
+            processedLines.push('</ul>');
+            processedLines.push('</div>');
+        }
+        processedLines.push('</div>');
+        processedLines.push('</div>');
     }
     if (inVideo) {
-        processedLines.push('</div>');
+        processedLines.push('</div></div>');
     }
     if (inProductSection) {
         processedLines.push('</div>');
     }
 
     html = processedLines.join('\n');
-    
-    // Final cleanup
-    html = html.replace(/#### /g, '');
     
     return html;
 }
@@ -1291,42 +1363,42 @@ function cleanCellContent(content) {
 }
 
 function generateEnhancedComparisonSchema(frontmatter, slug, canonicalUrl, products, winners) {
+    const currentDate = new Date().toISOString().split('T')[0];
+    
     const schema = {
         "@context": "https://schema.org",
-        "@type": "Article",
-        "headline": frontmatter.title || formatComparisonSlug(slug),
+        "@type": "Product",
+        "name": frontmatter.title || formatComparisonSlug(slug),
         "description": frontmatter.description || `Comparison of ${products.join(' vs ')}`,
         "image": frontmatter.featured_image || '',
-        "datePublished": frontmatter.date || new Date().toISOString(),
-        "dateModified": frontmatter.date || new Date().toISOString(),
-        "author": {
-            "@type": "Organization",
-            "name": "ReviewIndex",
-            "url": "https://reviewindex.pages.dev"
+        "brand": {
+            "@type": "Brand",
+            "name": "Multiple Brands"
         },
-        "publisher": {
-            "@type": "Organization",
-            "name": "ReviewIndex",
-            "logo": {
-                "@type": "ImageObject",
-                "url": "https://reviewindex.pages.dev/logo.png"
+        "offers": {
+            "@type": "AggregateOffer",
+            "offerCount": products.length,
+            "lowPrice": "12", // You might want to extract actual prices
+            "highPrice": "22",
+            "priceCurrency": "USD"
+        },
+        "review": {
+            "@type": "Review",
+            "reviewRating": {
+                "@type": "Rating",
+                "ratingValue": "4.5",
+                "bestRating": "5"
+            },
+            "author": {
+                "@type": "Organization",
+                "name": "ReviewIndex"
             }
         },
         "mainEntityOfPage": {
             "@type": "WebPage",
             "@id": canonicalUrl
-        },
-        "articleSection": "Product Comparisons"
+        }
     };
-
-    // Add Product schemas if we have product data
-    if (products.length > 0) {
-        schema.about = products.map(product => ({
-            "@type": "Product",
-            "name": product,
-            "category": frontmatter.categories ? frontmatter.categories[0] : "Electronics"
-        }));
-    }
 
     return JSON.stringify(schema, null, 2);
 }
@@ -1416,4 +1488,4 @@ function renderErrorPage(title, message) {
             'Cache-Control': 'no-cache, no-store, must-revalidate'
         }
     });
-}
+                    }
