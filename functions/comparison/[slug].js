@@ -1,4 +1,4 @@
-// functions/review/[...slug].js
+// functions/comparison/[...slug].js
 export async function onRequest(context) {
     const { request, params, env } = context;
     const slug = params.slug;
@@ -10,45 +10,45 @@ export async function onRequest(context) {
     // Try to get from cache first
     let response = await cache.match(cacheKey);
     if (response) {
-        console.log('✅ PAGE Cache HIT for:', slug);
+        console.log('✅ COMPARISON PAGE Cache HIT for:', slug);
         return response;
     }
-    console.log('🔄 PAGE Cache MISS for:', slug);
+    console.log('🔄 COMPARISON PAGE Cache MISS for:', slug);
     
     try {
         // If it's a direct file request for .md, redirect to proper URL
         if (slug.endsWith('.md')) {
             const cleanSlug = slug.replace('.md', '');
-            return Response.redirect(`${new URL(request.url).origin}/review/${cleanSlug}`, 301);
+            return Response.redirect(`${new URL(request.url).origin}/comparison/${cleanSlug}`, 301);
         }
 
-        // Fetch the current post content
-        const postContent = await fetchPostContent(slug, env.GITHUB_TOKEN);
+        // Fetch the comparison content
+        const comparisonContent = await fetchComparisonContent(slug, env.GITHUB_TOKEN);
         
-        if (!postContent) {
-            return renderErrorPage('Review not found', 'The requested review could not be found.');
+        if (!comparisonContent) {
+            return renderComparisonErrorPage('Comparison not found', 'The requested comparison could not be found.');
         }
 
-        // Parse current post frontmatter
-        const { frontmatter: currentFrontmatter, content } = parseMarkdown(postContent);
+        // Parse comparison markdown
+        const { frontmatter: comparisonFrontmatter, content } = parseComparisonMarkdown(comparisonContent);
         
-        // Convert markdown to HTML first
-        const htmlContent = convertMarkdownToHTML(content);
+        // Convert markdown to HTML with comparison-specific processing
+        const htmlContent = convertComparisonMarkdownToHTML(content);
         
-        // Get related posts (remove KV cache, use simple function)
-        const relatedPosts = await findRelatedPostsFromGitHub(
-            currentFrontmatter, 
+        // Get related comparisons
+        const relatedComparisons = await findRelatedComparisonsFromGitHub(
+            comparisonFrontmatter, 
             slug, 
             env.GITHUB_TOKEN
         );
 
-        // Render the post page
-        const fullHtml = await renderPostPage(
-            currentFrontmatter,
+        // Render the comparison page
+        const fullHtml = await renderComparisonPage(
+            comparisonFrontmatter,
             htmlContent, 
             slug, 
             request.url, 
-            relatedPosts
+            relatedComparisons
         );
         
         // Create response with cache headers
@@ -66,130 +66,17 @@ export async function onRequest(context) {
         return response;
 
     } catch (error) {
-        console.error('Error rendering page:', error);
-        return renderErrorPage('Server Error', 'An error occurred while loading the review.');
+        console.error('Error rendering comparison page:', error);
+        return renderComparisonErrorPage('Server Error', 'An error occurred while loading the comparison.');
     }
 }
 
-// ==================== SIMPLE RELATED POSTS (NO KV) ====================
+// ==================== COMPARISON-SPECIFIC FUNCTIONS ====================
 
-async function findRelatedPostsFromGitHub(currentFrontmatter, currentSlug, githubToken) {
-    try {
-        // Get all posts metadata
-        const allPosts = await fetchAllPostsMetadata(githubToken);
-        if (!allPosts || allPosts.length === 0) return [];
-
-        const currentPostCategories = normalizeCategories(currentFrontmatter.categories);
-        const related = [];
-
-        // Check each post for category matches
-        for (const post of allPosts) {
-            if (post.slug === currentSlug) continue; // Skip current post
-            
-            const postCategories = normalizeCategories(post.categories);
-            const matchingCategories = findMatchingCategories(currentPostCategories, postCategories);
-            
-            if (matchingCategories.length > 0) {
-                related.push({
-                    title: post.title || formatSlug(post.slug),
-                    slug: post.slug,
-                    description: post.description || '',
-                    image: post.image || '/default-thumbnail.jpg',
-                    categories: matchingCategories,
-                    matchCount: matchingCategories.length
-                });
-                
-                // Limit to 4 related posts
-                if (related.length >= 4) break;
-            }
-        }
-
-        console.log('📊 Found', related.length, 'related posts for:', currentSlug);
-        return related;
-
-    } catch (error) {
-        console.error('Error fetching related posts from GitHub:', error);
-        return [];
-    }
-}
-
-async function fetchAllPostsMetadata(githubToken) {
+async function fetchComparisonContent(slug, githubToken) {
     const REPO_OWNER = 'yourfreetools';
     const REPO_NAME = 'reviewindex';
-    
-    try {
-        const response = await fetch(
-            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/content/reviews`,
-            {
-                headers: {
-                    'Authorization': `token ${githubToken}`,
-                    'User-Agent': 'Review-Index-App',
-                    'Accept': 'application/vnd.github.v3+json'
-                }
-            }
-        );
-
-        if (response.status === 200) {
-            const files = await response.json();
-            const markdownFiles = files.filter(file => file.name.endsWith('.md'));
-            
-            const postsMetadata = [];
-            
-            // Fetch metadata for each file (limit to 20 for performance)
-            for (const file of markdownFiles.slice(0, 20)) {
-                try {
-                    const slug = file.name.replace('.md', '');
-                    const contentResponse = await fetch(
-                        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/content/reviews/${file.name}`,
-                        {
-                            headers: {
-                                'Authorization': `token ${githubToken}`,
-                                'User-Agent': 'Review-Index-App',
-                                'Accept': 'application/vnd.github.v3.raw'
-                            }
-                        }
-                    );
-                    
-                    if (contentResponse.status === 200) {
-                        const content = await contentResponse.text();
-                        // Only parse the first 15 lines for performance
-                        const firstLines = content.split('\n').slice(0, 15).join('\n');
-                        const { frontmatter } = parseMarkdown(firstLines + '\n---\n');
-                        
-                        postsMetadata.push({
-                            slug: slug,
-                            title: frontmatter.title,
-                            description: frontmatter.description,
-                            image: frontmatter.image,
-                            categories: frontmatter.categories
-                        });
-                    }
-                } catch (error) {
-                    console.error('Error processing file:', file.name, error);
-                    continue;
-                }
-            }
-            
-            return postsMetadata;
-        }
-        
-        return [];
-        
-    } catch (error) {
-        console.error('Error fetching posts metadata:', error);
-        return [];
-    }
-}
-
-// KEEP ALL YOUR EXISTING HELPER FUNCTIONS BELOW EXACTLY AS THEY ARE
-// (fetchPostContent, parseMarkdown, convertMarkdownToHTML, etc.)
-
-// ==================== EXISTING HELPER FUNCTIONS ====================
-
-async function fetchPostContent(slug, githubToken) {
-    const REPO_OWNER = 'yourfreetools';
-    const REPO_NAME = 'reviewindex';
-    const filePath = `content/reviews/${slug}.md`;
+    const filePath = `content/comparisons/${slug}.md`;
 
     try {
         const response = await fetch(
@@ -208,12 +95,12 @@ async function fetchPostContent(slug, githubToken) {
         }
         return null;
     } catch (error) {
-        console.error('Error fetching post:', error);
+        console.error('Error fetching comparison:', error);
         return null;
     }
 }
 
-function parseMarkdown(content) {
+function parseComparisonMarkdown(content) {
     const frontmatter = {};
     let markdownContent = content;
     
@@ -229,12 +116,17 @@ function parseMarkdown(content) {
                     const key = line.substring(0, colon).trim();
                     let value = line.substring(colon + 1).trim();
                     
+                    // Handle different value types
                     if (value.startsWith('"') && value.endsWith('"')) {
                         value = value.substring(1, value.length - 1);
                     } else if (value.startsWith("'") && value.endsWith("'")) {
                         value = value.substring(1, value.length - 1);
                     } else if (value.startsWith('[') && value.endsWith(']')) {
-                        value = value.substring(1, value.length - 1).split(',').map(item => item.trim().replace(/"/g, ''));
+                        value = value.substring(1, value.length - 1).split(',').map(item => item.trim().replace(/["']/g, ''));
+                    } else if (value === 'true') {
+                        value = true;
+                    } else if (value === 'false') {
+                        value = false;
                     }
                     
                     frontmatter[key] = value;
@@ -246,19 +138,38 @@ function parseMarkdown(content) {
     return { frontmatter, content: markdownContent };
 }
 
-function convertMarkdownToHTML(markdown) {
-    let html = markdown
+function convertComparisonMarkdownToHTML(markdown) {
+    let html = markdown;
+
+    // Process comparison table specifically
+    html = html.replace(/## 📋 Detailed Comparison Table[\s\S]*?(?=## |$)/g, (match) => {
+        return processComparisonTable(match);
+    });
+
+    // Process quick verdict section
+    html = html.replace(/### 🏆 Quick Verdict[\s\S]*?(?=## |$)/g, (match) => {
+        return processQuickVerdict(match);
+    });
+
+    // Process product analysis sections
+    html = html.replace(/---\s*### ([^\n]+)[\s\S]*?(?=---|$)/g, (match) => {
+        return processProductAnalysis(match);
+    });
+
+    // Standard markdown conversions
+    html = html
         .replace(/^# (.*)$/gm, '<h2>$1</h2>')
         .replace(/^## (.*)$/gm, '<h3>$1</h3>')
         .replace(/^### (.*)$/gm, '<h4>$1</h4>')
+        .replace(/^#### (.*)$/gm, '<h5>$1</h5>')
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
-        .replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>')
         .replace(/`([^`]+)`/g, '<code>$1</code>')
         .replace(/^> (.*)$/gm, '<blockquote>$1</blockquote>')
         .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" loading="lazy" class="content-image">')
         .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
+    // Process lists
     const lines = html.split('\n');
     let inList = false;
     let listItems = [];
@@ -287,9 +198,7 @@ function convertMarkdownToHTML(markdown) {
                 inList = false;
             }
             
-            if (line.startsWith('<h') || line.startsWith('<img') || line.startsWith('<a') || 
-                line.startsWith('<blockquote') || line.startsWith('<pre') || line.startsWith('<ul') || 
-                line.startsWith('<ol')) {
+            if (line.startsWith('<') || line.match(/^<[^>]+>$/)) {
                 processedLines.push(line);
             } else {
                 processedLines.push(`<p>${line}</p>`);
@@ -303,83 +212,642 @@ function convertMarkdownToHTML(markdown) {
 
     html = processedLines.join('\n');
 
-    return html
+    // Clean up
+    html = html
         .replace(/<p><\/p>/g, '')
-        .replace(/(<\/h[2-4]>)\s*<p>/g, '$1')
-        .replace(/<\/p>\s*(<h[2-4]>)/g, '$1')
+        .replace(/(<\/h[2-5]>)\s*<p>/g, '$1')
+        .replace(/<\/p>\s*(<h[2-5]>)/g, '$1')
         .replace(/<p>(<ul>.*?<\/ul>)<\/p>/g, '$1')
-        .replace(/<p>(<blockquote>.*?<\/blockquote>)<\/p>/g, '$1')
-        .replace(/<p>(<pre>.*?<\/pre>)<\/p>/gs, '$1');
+        .replace(/<p>(<blockquote>.*?<\/blockquote>)<\/p>/g, '$1');
+
+    return html;
 }
 
-function generateYouTubeEmbed(youtubeUrl, title) {
-    function getYouTubeId(url) {
-        const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
-        const match = url.match(regExp);
-        return (match && match[7].length === 11) ? match[7] : null;
+function processComparisonTable(tableSection) {
+    const lines = tableSection.split('\n');
+    let inTable = false;
+    let headers = [];
+    let rows = [];
+    let currentRow = [];
+
+    for (const line of lines) {
+        const trimmedLine = line.trim();
+        
+        if (trimmedLine.startsWith('|') && trimmedLine.endsWith('|')) {
+            inTable = true;
+            const cells = trimmedLine.split('|').slice(1, -1).map(cell => cell.trim());
+            
+            if (cells.length > 0) {
+                if (headers.length === 0 && !cells[0].includes('---')) {
+                    headers = cells;
+                } else if (cells[0].includes('---')) {
+                    // Skip separator row
+                    continue;
+                } else {
+                    currentRow = cells;
+                    rows.push([...currentRow]);
+                }
+            }
+        } else if (inTable && trimmedLine && !trimmedLine.startsWith('|')) {
+            // End of table
+            break;
+        }
     }
+
+    if (headers.length === 0 || rows.length === 0) {
+        return tableSection; // Return original if parsing fails
+    }
+
+    let tableHTML = `
+    <div class="comparison-table-container">
+        <table class="comparison-table" aria-label="Detailed product comparison">
+            <thead>
+                <tr>
+    `;
     
-    const videoId = getYouTubeId(youtubeUrl);
-    if (!videoId) return '';
+    headers.forEach(header => {
+        tableHTML += `<th scope="col">${escapeHtml(header)}</th>`;
+    });
+    
+    tableHTML += `
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    rows.forEach(row => {
+        tableHTML += '<tr>';
+        row.forEach((cell, index) => {
+            const isFirstCell = index === 0;
+            const cellTag = isFirstCell ? 'th scope="row"' : 'td';
+            
+            // Process special content like ratings, prices, etc.
+            let processedCell = cell;
+            if (cell.includes('⭐⭐⭐⭐⭐')) {
+                processedCell = cell.replace('⭐⭐⭐⭐⭐', '<span class="rating-stars">★★★★★</span> 5/5');
+            } else if (cell.includes('⭐⭐⭐')) {
+                processedCell = cell.replace('⭐⭐⭐', '<span class="rating-stars">★★★☆☆</span> 3/5');
+            } else if (cell.includes('$')) {
+                processedCell = `<span class="price">${cell}</span>`;
+            } else if (cell.includes('✅')) {
+                processedCell = cell.replace('✅', '<span class="pro-icon">✓</span>');
+            } else if (cell.includes('❌')) {
+                processedCell = cell.replace('❌', '<span class="con-icon">✗</span>');
+            }
+            
+            tableHTML += `<${cellTag}>${processedCell}</${isFirstCell ? 'th' : 'td'}>`;
+        });
+        tableHTML += '</tr>';
+    });
+    
+    tableHTML += `
+            </tbody>
+        </table>
+    </div>
+    `;
+    
+    return tableSection.replace(/\|.*\|[\s\S]*?(?=## |$)/, tableHTML);
+}
+
+function processQuickVerdict(verdictSection) {
+    const lines = verdictSection.split('\n');
+    let verdictHTML = '<div class="quick-verdict">';
+    
+    lines.forEach(line => {
+        const trimmedLine = line.trim();
+        
+        if (trimmedLine.startsWith('🏆') || trimmedLine.startsWith('💰') || trimmedLine.startsWith('⚡')) {
+            verdictHTML += `<div class="verdict-item">
+                <div class="verdict-icon">${trimmedLine.split(' ')[0]}</div>
+                <div class="verdict-content">
+                    <strong>${trimmedLine.split('**').filter((_, i) => i % 2 === 1).join('</strong>')}</strong>
+                    <p>${trimmedLine.split('*').pop()}</p>
+                </div>
+            </div>`;
+        }
+    });
+    
+    verdictHTML += '</div>';
+    return verdictSection.replace(/### 🏆 Quick Verdict[\s\S]*?(?=## |$)/, verdictHTML);
+}
+
+function processProductAnalysis(analysisSection) {
+    // Extract product name and content
+    const productMatch = analysisSection.match(/### ([^\n]+)/);
+    if (!productMatch) return analysisSection;
+    
+    const productName = productMatch[1];
+    const content = analysisSection.replace(/### [^\n]+\n/, '');
     
     return `
-    <section class="youtube-embed" aria-labelledby="video-title">
-        <h3 id="video-title">📺 Video Review</h3>
-        <div class="video-wrapper">
-            <iframe 
-                src="https://www.youtube.com/embed/${videoId}" 
-                title="Video review of ${escapeHtml(title)}"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                allowfullscreen
-                loading="lazy">
-            </iframe>
-        </div>
-        <p class="video-caption">Watch our detailed video review for a comprehensive overview</p>
-    </section>`;
+    <section class="product-analysis" aria-labelledby="${slugify(productName)}-analysis">
+        <h3 id="${slugify(productName)}-analysis">${productName}</h3>
+        ${convertStandardMarkdown(content)}
+    </section>
+    `;
 }
 
-function generateSchemaMarkup(frontmatter, slug, url) {
-    const rating = parseInt(frontmatter.rating) || 4;
-    const productName = (frontmatter.title || formatSlug(slug))
-        .replace(/^Best /, '')
-        .replace(/ – Honest Review.*$/, '')
-        .trim();
+function convertStandardMarkdown(content) {
+    return content
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\n/g, '<br>');
+}
 
+function slugify(text) {
+    return text.toLowerCase().replace(/[^\w]+/g, '-');
+}
+
+// ==================== RELATED COMPARISONS ====================
+
+async function findRelatedComparisonsFromGitHub(currentFrontmatter, currentSlug, githubToken) {
+    try {
+        const allComparisons = await fetchAllComparisonsMetadata(githubToken);
+        if (!allComparisons || allComparisons.length === 0) return [];
+
+        const currentComparisonCategories = normalizeCategories(currentFrontmatter.categories);
+        const related = [];
+
+        for (const comparison of allComparisons) {
+            if (comparison.slug === currentSlug) continue;
+            
+            const comparisonCategories = normalizeCategories(comparison.categories);
+            const matchingCategories = findMatchingCategories(currentComparisonCategories, comparisonCategories);
+            
+            if (matchingCategories.length > 0) {
+                related.push({
+                    title: comparison.title || formatSlug(comparison.slug),
+                    slug: comparison.slug,
+                    description: comparison.description || '',
+                    image: comparison.image || '/default-comparison-thumbnail.jpg',
+                    categories: matchingCategories,
+                    matchCount: matchingCategories.length
+                });
+                
+                if (related.length >= 3) break;
+            }
+        }
+
+        console.log('📊 Found', related.length, 'related comparisons for:', currentSlug);
+        return related;
+
+    } catch (error) {
+        console.error('Error fetching related comparisons from GitHub:', error);
+        return [];
+    }
+}
+
+async function fetchAllComparisonsMetadata(githubToken) {
+    const REPO_OWNER = 'yourfreetools';
+    const REPO_NAME = 'reviewindex';
+    
+    try {
+        const response = await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/content/comparisons`,
+            {
+                headers: {
+                    'Authorization': `token ${githubToken}`,
+                    'User-Agent': 'Review-Index-App',
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            }
+        );
+
+        if (response.status === 200) {
+            const files = await response.json();
+            const markdownFiles = files.filter(file => file.name.endsWith('.md'));
+            
+            const comparisonsMetadata = [];
+            
+            for (const file of markdownFiles.slice(0, 15)) {
+                try {
+                    const slug = file.name.replace('.md', '');
+                    const contentResponse = await fetch(
+                        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/content/comparisons/${file.name}`,
+                        {
+                            headers: {
+                                'Authorization': `token ${githubToken}`,
+                                'User-Agent': 'Review-Index-App',
+                                'Accept': 'application/vnd.github.v3.raw'
+                            }
+                        }
+                    );
+                    
+                    if (contentResponse.status === 200) {
+                        const content = await contentResponse.text();
+                        const firstLines = content.split('\n').slice(0, 15).join('\n');
+                        const { frontmatter } = parseComparisonMarkdown(firstLines + '\n---\n');
+                        
+                        comparisonsMetadata.push({
+                            slug: slug,
+                            title: frontmatter.title,
+                            description: frontmatter.description,
+                            image: frontmatter.featured_image,
+                            categories: frontmatter.categories
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error processing comparison file:', file.name, error);
+                    continue;
+                }
+            }
+            
+            return comparisonsMetadata;
+        }
+        
+        return [];
+        
+    } catch (error) {
+        console.error('Error fetching comparisons metadata:', error);
+        return [];
+    }
+}
+
+// ==================== SCHEMA & RENDERING ====================
+
+function generateComparisonSchemaMarkup(frontmatter, slug, url) {
+    const comparisonProducts = frontmatter.comparison_products || [];
+    
     return JSON.stringify({
         "@context": "https://schema.org",
-        "@type": "Product",
-        "name": productName,
-        "description": frontmatter.description || 'Comprehensive product review and analysis',
-        "image": frontmatter.image || '',
-        "review": {
-            "@type": "Review",
-            "reviewRating": {
-                "@type": "Rating",
-                "ratingValue": rating.toString(),
-                "bestRating": "5"
-            },
-            "author": {
-                "@type": "Organization",
-                "name": "ReviewIndex"
-            },
-            "publisher": {
-                "@type": "Organization",
-                "name": "ReviewIndex"
+        "@type": "Article",
+        "headline": frontmatter.title || formatSlug(slug),
+        "description": frontmatter.description || 'Detailed product comparison and analysis',
+        "image": frontmatter.featured_image || '',
+        "datePublished": frontmatter.date || new Date().toISOString(),
+        "author": {
+            "@type": "Organization",
+            "name": "ReviewIndex"
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "ReviewIndex",
+            "logo": {
+                "@type": "ImageObject",
+                "url": "https://reviewindex.pages.dev/logo.png"
             }
         },
-        "aggregateRating": {
-            "@type": "AggregateRating",
-            "ratingValue": rating.toString(),
-            "reviewCount": "1"
+        "mainEntity": {
+            "@type": "ItemList",
+            "numberOfItems": comparisonProducts.length,
+            "itemListElement": comparisonProducts.map((product, index) => ({
+                "@type": "ListItem",
+                "position": index + 1,
+                "item": {
+                    "@type": "Product",
+                    "name": product
+                }
+            }))
         }
     }, null, 2);
 }
 
-function formatSlug(slug) {
-    return slug.split('-').map(word => 
-        word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ');
+async function renderComparisonPage(frontmatter, htmlContent, slug, requestUrl, relatedComparisons = []) {
+    const canonicalUrl = `https://reviewindex.pages.dev/comparison/${slug}`;
+    const schemaMarkup = generateComparisonSchemaMarkup(frontmatter, slug, canonicalUrl);
+    const socialImage = frontmatter.featured_image || 'https://reviewindex.pages.dev/default-comparison-social.jpg';
+
+    const relatedComparisonsHTML = generateRelatedComparisonsHTML(relatedComparisons, frontmatter.categories);
+
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${escapeHtml(frontmatter.title || formatSlug(slug))} - ReviewIndex</title>
+    <meta name="description" content="${escapeHtml(frontmatter.description || 'Detailed product comparison and analysis')}">
+    <link rel="canonical" href="${canonicalUrl}">
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="${escapeHtml(frontmatter.title || formatSlug(slug))}">
+    <meta property="og:description" content="${escapeHtml(frontmatter.description || 'Detailed product comparison and analysis')}">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="${canonicalUrl}">
+    <meta property="og:image" content="${escapeHtml(socialImage)}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:site_name" content="ReviewIndex">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="${escapeHtml(frontmatter.title || formatSlug(slug))}">
+    <meta name="twitter:description" content="${escapeHtml(frontmatter.description || 'Detailed product comparison and analysis')}">
+    <meta name="twitter:image" content="${escapeHtml(socialImage)}">
+    <meta name="twitter:image:alt" content="${escapeHtml(frontmatter.title || formatSlug(slug))} product comparison">
+    
+    <!-- Schema.org JSON-LD -->
+    <script type="application/ld+json">
+    ${schemaMarkup}
+    </script>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', system-ui, sans-serif; 
+            line-height: 1.6; 
+            color: #333;
+            background: #f8fafc;
+            padding: 20px;
+        }
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 40px; 
+            background: white;
+            min-height: 100vh;
+            box-shadow: 0 0 30px rgba(0,0,0,0.1);
+            border-radius: 12px;
+        }
+        .header { 
+            text-align: center; 
+            padding: 2rem 0; 
+            border-bottom: 2px solid #f0f0f0;
+            margin-bottom: 2rem;
+        }
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            color: #1a202c;
+            line-height: 1.2;
+        }
+        .content { 
+            font-size: 1.1rem; 
+            line-height: 1.8;
+            color: #2d3748;
+        }
+        
+        /* Comparison Table Styles */
+        .comparison-table-container {
+            margin: 3rem 0;
+            overflow-x: auto;
+            background: #f8fafc;
+            padding: 2rem;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+        }
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .comparison-table th,
+        .comparison-table td {
+            padding: 1.25rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .comparison-table th {
+            background: #1e40af;
+            color: white;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        .comparison-table tr:last-child td {
+            border-bottom: none;
+        }
+        .comparison-table tr:hover {
+            background: #f8fafc;
+        }
+        .comparison-table th:first-child {
+            border-radius: 8px 0 0 0;
+        }
+        .comparison-table th:last-child {
+            border-radius: 0 8px 0 0;
+        }
+        
+        /* Quick Verdict Styles */
+        .quick-verdict {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            padding: 2.5rem;
+            border-radius: 12px;
+            margin: 2rem 0;
+            border-left: 4px solid #0369a1;
+        }
+        .verdict-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .verdict-item:last-child {
+            margin-bottom: 0;
+        }
+        .verdict-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        .verdict-content strong {
+            color: #1e40af;
+            font-size: 1.1rem;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        
+        /* Product Analysis Styles */
+        .product-analysis {
+            background: #fef7ed;
+            padding: 2rem;
+            border-radius: 12px;
+            margin: 2rem 0;
+            border: 2px solid #fed7aa;
+        }
+        .product-analysis h3 {
+            color: #92400e;
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+            border-bottom: 2px solid #fdba74;
+            padding-bottom: 0.5rem;
+        }
+        
+        /* Rating and Icon Styles */
+        .rating-stars {
+            color: #f59e0b;
+            font-weight: bold;
+        }
+        .price {
+            color: #059669;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        .pro-icon {
+            color: #059669;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+        .con-icon {
+            color: #dc2626;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+        
+        /* Related Comparisons */
+        .related-comparisons {
+            margin: 3rem 0;
+        }
+        .related-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        .related-item {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        .related-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            border-color: #3b82f6;
+            text-decoration: none;
+        }
+        .related-item h3 {
+            color: #1e40af;
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+            line-height: 1.3;
+        }
+        .related-item p {
+            color: #64748b;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        .related-categories {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+        .related-category {
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        /* Back Link */
+        .back-link { 
+            display: inline-block; 
+            margin-top: 3rem; 
+            color: #2563eb; 
+            text-decoration: none;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border: 2px solid #2563eb;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        .back-link:hover {
+            background: #2563eb;
+            color: white;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .container { padding: 20px; }
+            .header h1 { font-size: 2rem; }
+            .comparison-table-container { padding: 1rem; }
+            .comparison-table th, 
+            .comparison-table td { padding: 0.75rem; }
+            .quick-verdict { padding: 1.5rem; }
+            .verdict-item { flex-direction: column; text-align: center; }
+            .related-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header" role="banner">
+            <h1>${escapeHtml(frontmatter.title || formatSlug(slug))}</h1>
+            ${frontmatter.description ? `<p style="font-size: 1.2rem; color: #4a5568; margin-top: 1rem;">${escapeHtml(frontmatter.description)}</p>` : ''}
+        </header>
+        
+        <main class="content" role="main">
+            ${htmlContent}
+        </main>
+        
+        <!-- Related Comparisons Section -->
+        ${relatedComparisonsHTML}
+        
+        <nav aria-label="Breadcrumb navigation" style="text-align: center;">
+            <a href="/" class="back-link">← Back to All Comparisons</a>
+        </nav>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Lazy load images
+            const lazyImages = [].slice.call(document.querySelectorAll('img[loading="lazy"]'));
+            
+            if ('IntersectionObserver' in window) {
+                let lazyImageObserver = new IntersectionObserver(function(entries, observer) {
+                    entries.forEach(function(entry) {
+                        if (entry.isIntersecting) {
+                            let lazyImage = entry.target;
+                            lazyImage.src = lazyImage.dataset.src || lazyImage.src;
+                            lazyImageObserver.unobserve(lazyImage);
+                        }
+                    });
+                });
+
+                lazyImages.forEach(function(lazyImage) {
+                    lazyImageObserver.observe(lazyImage);
+                });
+            }
+        });
+    </script>
+</body>
+</html>`;
 }
+
+function generateRelatedComparisonsHTML(relatedComparisons, currentCategories) {
+    if (relatedComparisons.length === 0) return '';
+    
+    const normalizedCats = normalizeCategories(currentCategories);
+    const displayCategory = normalizedCats.length > 0 ? normalizedCats[0] : 'related';
+    
+    return `
+<section class="related-comparisons" aria-labelledby="related-comparisons-title">
+    <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 2.5rem; border-radius: 12px; margin: 3rem 0; border-left: 4px solid #0369a1;">
+        <h2 id="related-comparisons-title" style="color: #0c4a6e; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            🔄 More ${displayCategory.charAt(0).toUpperCase() + displayCategory.slice(1)} Comparisons
+        </h2>
+        <p style="color: #475569; margin-bottom: 1.5rem;">You might also find these comparisons helpful:</p>
+        
+        <div class="related-grid">
+            ${relatedComparisons.map(comparison => `
+            <a href="/comparison/${comparison.slug}" class="related-item">
+                <h3>${escapeHtml(comparison.title)}</h3>
+                ${comparison.description ? `<p>${escapeHtml(comparison.description)}</p>` : ''}
+                <div class="related-categories">
+                    ${comparison.categories.map(cat => `
+                        <span class="related-category">${cat}</span>
+                    `).join('')}
+                </div>
+            </a>
+            `).join('')}
+        </div>
+    </div>
+</section>`;
+}
+
+// ==================== HELPER FUNCTIONS ====================
 
 function escapeHtml(unsafe) {
     if (!unsafe) return '';
@@ -391,7 +859,29 @@ function escapeHtml(unsafe) {
         .replace(/'/g, "&#039;");
 }
 
-function renderErrorPage(title, message) {
+function formatSlug(slug) {
+    return slug.split('-').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+}
+
+function normalizeCategories(categories) {
+    if (!categories) return [];
+    
+    let catsArray = Array.isArray(categories) ? categories : [categories];
+    
+    return catsArray
+        .map(cat => cat.trim().toLowerCase())
+        .filter(cat => cat !== 'comparisons' && cat !== 'comparison');
+}
+
+function findMatchingCategories(currentCats, otherCats) {
+    return currentCats.filter(cat => 
+        otherCats.includes(cat)
+    );
+}
+
+function renderComparisonErrorPage(title, message) {
     const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -420,483 +910,4 @@ function renderErrorPage(title, message) {
         status: 404,
         headers: { 'Content-Type': 'text/html' }
     });
-}
-
-function normalizeCategories(categories) {
-    if (!categories) return [];
-    
-    let catsArray = Array.isArray(categories) ? categories : [categories];
-    
-    return catsArray
-        .map(cat => cat.trim().toLowerCase())
-        .filter(cat => cat !== 'reviews' && cat !== 'review');
-}
-
-function findMatchingCategories(currentCats, otherCats) {
-    return currentCats.filter(cat => 
-        otherCats.includes(cat)
-    );
-}
-
-async function renderPostPage(frontmatter, htmlContent, slug, requestUrl, relatedPosts = []) {
-    const canonicalUrl = `https://reviewindex.pages.dev/review/${slug}`;
-    const schemaMarkup = generateSchemaMarkup(frontmatter, slug, canonicalUrl);
-    const socialImage = frontmatter.image || 'https://reviewindex.pages.dev/default-social-image.jpg';
-    const youtubeEmbed = frontmatter.youtubeId ? generateYouTubeEmbed(frontmatter.youtubeId, frontmatter.title || formatSlug(slug)) : '';
-
-    const relatedPostsHTML = generateRelatedPostsHTML(relatedPosts, frontmatter.categories);
-
-    return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${escapeHtml(frontmatter.title || formatSlug(slug))} - ReviewIndex</title>
-    <meta name="description" content="${escapeHtml(frontmatter.description || 'Comprehensive product review and analysis')}">
-    <link rel="canonical" href="${canonicalUrl}">
-    
-    <!-- Open Graph -->
-    <meta property="og:title" content="${escapeHtml(frontmatter.title || formatSlug(slug))}">
-    <meta property="og:description" content="${escapeHtml(frontmatter.description || 'Comprehensive product review and analysis')}">
-    <meta property="og:type" content="article">
-    <meta property="og:url" content="${canonicalUrl}">
-    <meta property="og:image" content="${escapeHtml(socialImage)}">
-    <meta property="og:image:width" content="1200">
-    <meta property="og:image:height" content="630">
-    <meta property="og:site_name" content="ReviewIndex">
-    
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="${escapeHtml(frontmatter.title || formatSlug(slug))}">
-    <meta name="twitter:description" content="${escapeHtml(frontmatter.description || 'Comprehensive product review and analysis')}">
-    <meta name="twitter:image" content="${escapeHtml(socialImage)}">
-    <meta name="twitter:image:alt" content="${escapeHtml(frontmatter.title || formatSlug(slug))} product review">
-    
-    <!-- Schema.org JSON-LD -->
-    <script type="application/ld+json">
-    ${schemaMarkup}
-    </script>
-    
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'Segoe UI', system-ui, sans-serif; 
-            line-height: 1.6; 
-            color: #333;
-            background: #f5f5f5;
-            padding: 20px;
-        }
-        .container { 
-            max-width: 800px; 
-            margin: 0 auto; 
-            padding: 40px; 
-            background: white;
-            min-height: 100vh;
-            box-shadow: 0 0 30px rgba(0,0,0,0.1);
-            border-radius: 12px;
-        }
-        .header { 
-            text-align: center; 
-            padding: 2rem 0; 
-            border-bottom: 2px solid #f0f0f0;
-            margin-bottom: 2rem;
-        }
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-            color: #1a202c;
-            line-height: 1.2;
-        }
-        .rating { 
-            color: #f59e0b; 
-            font-size: 1.5rem; 
-            margin: 1rem 0;
-        }
-        .content { 
-            font-size: 1.1rem; 
-            line-height: 1.8;
-            color: #2d3748;
-        }
-        .content img.content-image { 
-            max-width: 100%; 
-            height: auto; 
-            margin: 2rem 0;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .back-link { 
-            display: inline-block; 
-            margin-top: 3rem; 
-            color: #2563eb; 
-            text-decoration: none;
-            font-weight: 600;
-            padding: 0.5rem 1rem;
-            border: 2px solid #2563eb;
-            border-radius: 6px;
-            transition: all 0.3s ease;
-        }
-        .back-link:hover {
-            background: #2563eb;
-            color: white;
-        }
-        .meta-info {
-            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-            padding: 1.5rem;
-            border-radius: 12px;
-            margin: 2rem 0;
-            font-size: 0.95rem;
-            color: #4a5568;
-            border-left: 4px solid #2563eb;
-        }
-        
-        /* YouTube Embed Styles */
-        .youtube-embed {
-            margin: 3rem 0;
-            text-align: center;
-            background: #fef7ed;
-            padding: 2rem;
-            border-radius: 12px;
-            border: 2px solid #fed7aa;
-        }
-        .youtube-embed h3 {
-            margin-bottom: 1.5rem;
-            color: #1a202c;
-            font-size: 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-        }
-        .video-wrapper {
-            position: relative;
-            width: 100%;
-            height: 0;
-            padding-bottom: 56.25%;
-            margin: 1.5rem 0;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-        }
-        .video-wrapper iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border: none;
-        }
-        .video-caption {
-            margin-top: 1rem;
-            color: #666;
-            font-size: 0.9rem;
-        }
-        
-        /* Related Posts Styles */
-        .related-posts {
-            margin: 3rem 0;
-        }
-        .related-grid {
-            display: grid;
-            gap: 1.5rem;
-        }
-        .related-item {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 12px;
-            border: 1px solid #e2e8f0;
-            transition: all 0.3s ease;
-            display: flex;
-            gap: 1rem;
-            align-items: flex-start;
-            text-decoration: none;
-            color: inherit;
-        }
-        .related-item:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-            border-color: #3b82f6;
-            text-decoration: none;
-        }
-        .related-thumbnail {
-            flex-shrink: 0;
-            width: 100px;
-            height: 100px;
-            border-radius: 8px;
-            overflow: hidden;
-            background: #f8fafc;
-            position: relative;
-        }
-        .related-thumbnail img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: transform 0.3s ease;
-        }
-        .related-item:hover .related-thumbnail img {
-            transform: scale(1.05);
-        }
-        .related-content {
-            flex: 1;
-            min-width: 0;
-        }
-        .related-content h3 {
-            color: #1e40af;
-            margin-bottom: 0.5rem;
-            font-size: 1.1rem;
-            line-height: 1.3;
-        }
-        .related-content p {
-            color: #64748b;
-            font-size: 0.9rem;
-            margin-bottom: 0.75rem;
-            line-height: 1.4;
-        }
-        .related-categories {
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-        }
-        .related-category {
-            background: #dbeafe;
-            color: #1e40af;
-            padding: 0.2rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 500;
-        }
-        
-        /* Content styles */
-        .content h2 {
-            margin: 3rem 0 1.5rem 0;
-            color: #1a202c;
-            border-bottom: 3px solid #e2e8f0;
-            padding-bottom: 0.75rem;
-            font-size: 1.8rem;
-        }
-        .content h3 {
-            margin: 2rem 0 1rem 0;
-            color: #2d3748;
-            font-size: 1.4rem;
-        }
-        .content h4 {
-            margin: 1.5rem 0 0.75rem 0;
-            color: #4a5568;
-            font-size: 1.2rem;
-        }
-        .content p {
-            margin-bottom: 1.5rem;
-            font-size: 1.1rem;
-            line-height: 1.7;
-        }
-        .content ul, .content ol {
-            margin: 1.5rem 0;
-            padding-left: 2.5rem;
-        }
-        .content li {
-            margin-bottom: 0.75rem;
-            line-height: 1.6;
-        }
-        .content strong {
-            font-weight: 600;
-            color: #1a202c;
-        }
-        .content em {
-            font-style: italic;
-            color: #4a5568;
-        }
-        .content blockquote {
-            border-left: 4px solid #2563eb;
-            padding-left: 1.5rem;
-            margin: 2rem 0;
-            color: #4a5568;
-            font-style: italic;
-            background: #f8fafc;
-            padding: 1.5rem;
-            border-radius: 0 8px 8px 0;
-        }
-        .content code {
-            background: #f1f5f9;
-            padding: 0.2rem 0.4rem;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-        }
-        .content pre {
-            background: #1a202c;
-            color: #e2e8f0;
-            padding: 1.5rem;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin: 2rem 0;
-        }
-        .content pre code {
-            background: none;
-            padding: 0;
-            color: inherit;
-        }
-        
-        /* Responsive design */
-        @media (max-width: 768px) {
-            body { padding: 10px; }
-            .container { padding: 20px; }
-            .header h1 { font-size: 2rem; }
-            .content { font-size: 1rem; }
-            .youtube-embed { margin: 2rem 0; padding: 1.5rem; }
-            .related-item { flex-direction: column; text-align: center; }
-            .related-thumbnail { 
-                width: 120px; 
-                height: 120px; 
-                margin: 0 auto 1rem auto; 
-            }
-        }
-        
-        /* Animation */
-        .container {
-            animation: fadeInUp 0.6s ease-out;
-        }
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        /* Lazy loading */
-        img[loading="lazy"] {
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-        img[loading="lazy"].loaded {
-            opacity: 1;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header class="header" role="banner">
-            <h1>${escapeHtml(frontmatter.title || formatSlug(slug))}</h1>
-            ${frontmatter.rating ? `<div class="rating" aria-label="Rating: ${frontmatter.rating} out of 5 stars">${'⭐'.repeat(parseInt(frontmatter.rating))} ${frontmatter.rating}/5</div>` : ''}
-            ${frontmatter.description ? `<p style="font-size: 1.2rem; color: #4a5568;">${escapeHtml(frontmatter.description)}</p>` : ''}
-        </header>
-        
-        <div class="meta-info">
-            <strong>Published:</strong> ${frontmatter.date || 'Recently'} | 
-            <strong>Categories:</strong> ${frontmatter.categories || 'Review'} |
-            <strong>Review by:</strong> ReviewIndex Team
-        </div>
-        
-        ${youtubeEmbed}
-        
-        <main class="content" role="main">
-            ${htmlContent}
-        </main>
-        
-        <!-- Related Posts Section -->
-        ${relatedPostsHTML}
-        
-        ${frontmatter.affiliateLink ? `
-        <aside style="background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%); padding: 2rem; border-radius: 12px; margin: 3rem 0; text-align: center; border: 2px solid #fdba74;" aria-label="Where to buy">
-            <h2 style="color: #1a202c; margin-bottom: 1rem;">Where to Buy</h2>
-            <a href="${frontmatter.affiliateLink}" target="_blank" rel="nofollow sponsored" style="background: #2563eb; color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 8px; display: inline-block; margin: 1rem 0; font-weight: 600; transition: all 0.3s ease;">
-                Check Current Price on Amazon
-            </a>
-            <p style="margin-top: 1rem; color: #666; font-size: 0.9rem;"><small>Note: This is an affiliate link. We may earn a commission at no extra cost to you.</small></p>
-        </aside>
-        ` : ''}
-        
-        <nav aria-label="Breadcrumb navigation" style="text-align: center;">
-            <a href="/" class="back-link">← Back to All Reviews</a>
-        </nav>
-    </div>
-    
-    <script>
-        // Enhanced lazy loading with intersection observer
-        document.addEventListener('DOMContentLoaded', function() {
-            // Lazy load images
-            const lazyImages = [].slice.call(document.querySelectorAll('img[loading="lazy"]'));
-            
-            if ('IntersectionObserver' in window) {
-                let lazyImageObserver = new IntersectionObserver(function(entries, observer) {
-                    entries.forEach(function(entry) {
-                        if (entry.isIntersecting) {
-                            let lazyImage = entry.target;
-                            lazyImage.src = lazyImage.dataset.src || lazyImage.src;
-                            lazyImage.classList.add('loaded');
-                            lazyImageObserver.unobserve(lazyImage);
-                        }
-                    });
-                });
-
-                lazyImages.forEach(function(lazyImage) {
-                    lazyImageObserver.observe(lazyImage);
-                });
-            } else {
-                // Fallback for older browsers
-                lazyImages.forEach(function(lazyImage) {
-                    lazyImage.src = lazyImage.dataset.src || lazyImage.src;
-                    lazyImage.classList.add('loaded');
-                });
-            }
-
-            // Smooth scrolling
-            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-                anchor.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    const target = document.querySelector(this.getAttribute('href'));
-                    if (target) {
-                        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
-                });
-            });
-            
-            // External links loading state
-            document.querySelectorAll('a[target="_blank"]').forEach(link => {
-                link.addEventListener('click', function() {
-                    this.style.opacity = '0.7';
-                });
-            });
-        });
-    </script>
-</body>
-</html>`;
-}
-
-function generateRelatedPostsHTML(relatedPosts, currentCategories) {
-    if (relatedPosts.length === 0) return '';
-    
-    const normalizedCats = normalizeCategories(currentCategories);
-    const displayCategory = normalizedCats.length > 0 ? normalizedCats[0] : 'related';
-    
-    return `
-<section class="related-posts" aria-labelledby="related-posts-title">
-    <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 2.5rem; border-radius: 12px; margin: 3rem 0; border-left: 4px solid #0369a1;">
-        <h2 id="related-posts-title" style="color: #0c4a6e; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
-            🔗 More ${displayCategory.charAt(0).toUpperCase() + displayCategory.slice(1)} Reviews
-        </h2>
-        <p style="color: #475569; margin-bottom: 1.5rem;">If you liked this review, you might also be interested in:</p>
-        
-        <div class="related-grid">
-            ${relatedPosts.map(post => `
-            <a href="/review/${post.slug}" class="related-item">
-                <div class="related-thumbnail">
-                    <img 
-                        src="${post.image}" 
-                        alt="${escapeHtml(post.title)}"
-                        loading="lazy"
-                        onerror="this.src='/default-thumbnail.jpg'"
-                    >
-                </div>
-                <div class="related-content">
-                    <h3>${escapeHtml(post.title)}</h3>
-                    ${post.description ? `<p>${escapeHtml(post.description)}</p>` : ''}
-                    <div class="related-categories">
-                        ${post.categories.map(cat => `
-                            <span class="related-category">${cat}</span>
-                        `).join('')}
-                    </div>
-                </div>
-            </a>
-            `).join('')}
-        </div>
-    </div>
-</section>`;
-            }
+                }
