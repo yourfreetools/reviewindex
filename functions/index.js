@@ -1272,4 +1272,4 @@ function renderErrorPage() {
         status: 500,
         headers: { 'Content-Type': 'text/html' }
     });
-          }
+    }
