@@ -22,13 +22,13 @@ export async function onRequest(context) {
         const relatedComparisons = await fetchRelatedComparisons(slug, frontmatter.categories, env.GITHUB_TOKEN);
 
         // Convert markdown to HTML and render the comparison page
-        const htmlContent = await renderComparisonPage(comparisonContent, slug, request.url, relatedComparisons);
+        const htmlContent = await renderComparisonPage(comparisonContent, slug, request.url, relatedComparisons, frontmatter);
         
-        // Create response with 6-month cache headers
+        // Create response with 1-year cache headers
         return new Response(htmlContent, {
             headers: { 
                 'Content-Type': 'text/html; charset=utf-8',
-                'Cache-Control': 'public, max-age=15552000, immutable', // 6 months
+                'Cache-Control': 'public, max-age=31536000, immutable', // 1 year
                 'X-Content-Type-Options': 'nosniff',
                 'X-Frame-Options': 'DENY'
             }
@@ -134,24 +134,28 @@ async function fetchRelatedComparisons(currentSlug, currentCategories, githubTok
     }
 }
 
-async function renderComparisonPage(markdownContent, slug, requestUrl, relatedComparisons) {
+async function renderComparisonPage(markdownContent, slug, requestUrl, relatedComparisons, frontmatter) {
     // Parse frontmatter and content
-    const { frontmatter, content } = parseComparisonMarkdown(markdownContent);
+    const { frontmatter: parsedFrontmatter, content } = parseComparisonMarkdown(markdownContent);
+    const allFrontmatter = { ...frontmatter, ...parsedFrontmatter };
+    
+    // Extract product data with affiliate links, images, videos, pros/cons
+    const productData = extractProductData(content, allFrontmatter.comparison_products || []);
     
     // Convert markdown to HTML with proper formatting
-    const htmlContent = convertComparisonMarkdownToHTML(content, frontmatter);
+    const htmlContent = convertComparisonMarkdownToHTML(content, allFrontmatter, productData);
     
     // Generate canonical URL
     const canonicalUrl = `https://reviewindex.pages.dev/comparison/${slug}`;
     
     // Get products from frontmatter
-    const products = frontmatter.comparison_products || [];
+    const products = allFrontmatter.comparison_products || [];
     
     // Extract winners from content
     const winners = extractWinnersFromContent(content);
     
-    // Generate schema markup
-    const schemaMarkup = generateComparisonSchema(frontmatter, slug, canonicalUrl, products);
+    // Generate enhanced schema markup
+    const schemaMarkup = generateEnhancedComparisonSchema(allFrontmatter, slug, canonicalUrl, products, productData);
     
     return `
 <!DOCTYPE html>
@@ -159,29 +163,29 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${escapeHtml(frontmatter.title || formatComparisonSlug(slug))} - ReviewIndex</title>
-    <meta name="description" content="${escapeHtml(frontmatter.description || `Compare ${products.join(' vs ')} - Detailed analysis and buying guide`)}">
+    <title>${escapeHtml(allFrontmatter.title || formatComparisonSlug(slug))} - ReviewIndex</title>
+    <meta name="description" content="${escapeHtml(allFrontmatter.description || `Compare ${products.join(' vs ')} - Detailed analysis and buying guide`)}">
     <link rel="canonical" href="${canonicalUrl}">
     
     <!-- SEO Meta Tags -->
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
-    <meta name="keywords" content="${products.join(', ')}, comparison, vs, review, specs, features">
+    <meta name="keywords" content="${products.join(', ')}, comparison, vs, review, specs, features, buy, price">
     
     <!-- Open Graph -->
-    <meta property="og:title" content="${escapeHtml(frontmatter.title || formatComparisonSlug(slug))}">
-    <meta property="og:description" content="${escapeHtml(frontmatter.description || `Compare ${products.join(' vs ')} - Detailed analysis and buying guide`)}">
+    <meta property="og:title" content="${escapeHtml(allFrontmatter.title || formatComparisonSlug(slug))}">
+    <meta property="og:description" content="${escapeHtml(allFrontmatter.description || `Compare ${products.join(' vs ')} - Detailed analysis and buying guide`)}">
     <meta property="og:type" content="article">
     <meta property="og:url" content="${canonicalUrl}">
-    <meta property="og:image" content="${escapeHtml(frontmatter.featured_image || 'https://reviewindex.pages.dev/default-comparison-image.jpg')}">
+    <meta property="og:image" content="${escapeHtml(allFrontmatter.featured_image || productData[0]?.image || 'https://reviewindex.pages.dev/default-comparison-image.jpg')}">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:site_name" content="ReviewIndex">
     
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="${escapeHtml(frontmatter.title || formatComparisonSlug(slug))}">
-    <meta name="twitter:description" content="${escapeHtml(frontmatter.description || `Compare ${products.join(' vs ')} - Detailed analysis and buying guide`)}">
-    <meta name="twitter:image" content="${escapeHtml(frontmatter.featured_image || 'https://reviewindex.pages.dev/default-comparison-image.jpg')}">
+    <meta name="twitter:title" content="${escapeHtml(allFrontmatter.title || formatComparisonSlug(slug))}">
+    <meta name="twitter:description" content="${escapeHtml(allFrontmatter.description || `Compare ${products.join(' vs ')} - Detailed analysis and buying guide`)}">
+    <meta name="twitter:image" content="${escapeHtml(allFrontmatter.featured_image || productData[0]?.image || 'https://reviewindex.pages.dev/default-comparison-image.jpg')}">
     
     <!-- Schema.org JSON-LD -->
     <script type="application/ld+json">
@@ -302,6 +306,248 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
             gap: 0.75rem;
         }
         
+        /* Enhanced Comparison Table */
+        .specs-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 2rem 0;
+            font-size: 0.95rem;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+        
+        .specs-table th {
+            background: var(--primary);
+            color: white;
+            padding: 1.25rem;
+            text-align: center;
+            font-weight: 600;
+            font-size: 1.1rem;
+            border: 1px solid var(--primary-dark);
+        }
+        
+        .specs-table td {
+            padding: 1rem;
+            border: 1px solid var(--border);
+            vertical-align: top;
+        }
+        
+        .specs-table .feature-cell {
+            background: var(--light);
+            font-weight: 600;
+            color: var(--dark);
+            width: 200px;
+            padding: 1rem 1.25rem;
+        }
+        
+        .specs-table .product-cell {
+            text-align: center;
+            vertical-align: middle;
+        }
+        
+        .price-badge {
+            background: var(--success);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 25px;
+            font-weight: 700;
+            font-size: 1.1rem;
+            display: inline-block;
+            margin: 0.5rem 0;
+        }
+        
+        .rating-stars {
+            color: #f59e0b;
+            font-size: 1.2rem;
+            margin: 0.5rem 0;
+        }
+        
+        /* Product Cards */
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin: 3rem 0;
+        }
+        
+        .product-card {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            transition: transform 0.3s ease;
+        }
+        
+        .product-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .product-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 2px solid var(--border);
+        }
+        
+        .product-image {
+            max-width: 200px;
+            height: auto;
+            border-radius: 12px;
+            margin: 1rem auto;
+            display: block;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+        
+        .product-header h3 {
+            font-size: 1.5rem;
+            color: var(--dark);
+            margin-bottom: 0.5rem;
+        }
+        
+        /* Affiliate Buttons */
+        .affiliate-btn {
+            display: inline-block;
+            background: var(--success);
+            color: white;
+            padding: 1rem 2rem;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            text-align: center;
+            margin: 1rem 0;
+            width: 100%;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .affiliate-btn:hover {
+            background: #0d9c6d;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        }
+        
+        .affiliate-btn:active {
+            transform: translateY(0);
+        }
+        
+        /* Decision Questions Section */
+        .decision-questions {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 3rem;
+            border-radius: 20px;
+            margin: 3rem 0;
+        }
+        
+        .decision-questions h2 {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 2rem;
+        }
+        
+        .questions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        
+        .question-card {
+            background: rgba(255,255,255,0.1);
+            padding: 1.5rem;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .question-card h4 {
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+        
+        /* Pros/Cons Lists */
+        .pros-cons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+        
+        @media (max-width: 768px) {
+            .pros-cons {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .pros-list, .cons-list {
+            padding: 1.5rem;
+            border-radius: 12px;
+        }
+        
+        .pros-list {
+            background: #f0fdf4;
+            border-left: 6px solid var(--success);
+        }
+        
+        .cons-list {
+            background: #fef2f2;
+            border-left: 6px solid var(--danger);
+        }
+        
+        .pros-list h4, .cons-list h4 {
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1.3rem;
+        }
+        
+        .pros-list ul, .cons-list ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .pros-list li, .cons-list li {
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+        
+        .pros-list li:last-child, .cons-list li:last-child {
+            border-bottom: none;
+        }
+        
+        /* YouTube Embed */
+        .video-embed {
+            margin: 2rem 0;
+        }
+        
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            height: 0;
+            padding-bottom: 56.25%;
+            margin: 1.5rem 0;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
+        .video-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
         /* Related Comparisons Section */
         .related-section {
             background: white;
@@ -359,247 +605,18 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
         }
         
         .related-badge {
-            background: var(--primary-light);
-            color: var(--primary-dark);
-            padding: 0.2rem 0.6rem;
+            background: var(--primary);
+            color: white;
+            padding: 0.3rem 0.8rem;
             border-radius: 12px;
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             font-weight: 500;
         }
         
         .related-vs {
-            color: var(--gray-500);
+            color: var(--dark);
             font-weight: 700;
             font-size: 0.8rem;
-        }
-        
-        /* Comparison Table */
-        .comparison-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 1.5rem 0;
-            font-size: 0.95rem;
-            background: white;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: var(--shadow);
-        }
-        
-        .comparison-table th {
-            background: var(--light);
-            padding: 1rem;
-            text-align: left;
-            font-weight: 600;
-            color: var(--dark);
-            border: 1px solid var(--border);
-        }
-        
-        .comparison-table td {
-            padding: 1rem;
-            border: 1px solid var(--border);
-            vertical-align: top;
-        }
-        
-        .comparison-table .feature-cell {
-            background: var(--light);
-            font-weight: 600;
-            color: var(--dark);
-            width: 200px;
-        }
-        
-        /* Product Cards */
-        .products-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 2rem;
-            margin: 2rem 0;
-        }
-        
-        .product-card {
-            background: white;
-            border-radius: 12px;
-            padding: 2rem;
-            box-shadow: var(--shadow);
-            border: 1px solid var(--border);
-        }
-        
-        .product-header {
-            text-align: center;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
-            border-bottom: 2px solid var(--border);
-        }
-        
-        .product-header h3 {
-            font-size: 1.4rem;
-            color: var(--dark);
-            margin-bottom: 0.5rem;
-        }
-        
-        /* Affiliate Buttons */
-        .affiliate-btn {
-            display: inline-block;
-            background: var(--success);
-            color: white;
-            padding: 0.75rem 1.5rem;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            text-align: center;
-            margin: 0.5rem 0;
-        }
-        
-        .affiliate-btn:hover {
-            background: #0d9c6d;
-            transform: translateY(-2px);
-        }
-        
-        /* Images and Media */
-        .content-image {
-            max-width: 100%;
-            height: auto;
-            border-radius: 12px;
-            margin: 1rem 0;
-            display: block;
-        }
-        
-        /* YouTube Embed */
-        .video-embed {
-            margin: 2rem 0;
-            text-align: center;
-        }
-        
-        .video-wrapper {
-            position: relative;
-            width: 100%;
-            height: 0;
-            padding-bottom: 56.25%;
-            margin: 1.5rem 0;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-        }
-        
-        .video-wrapper iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border: none;
-        }
-        
-        /* Buttons */
-        .btn {
-            display: inline-block;
-            background: var(--primary);
-            color: white;
-            padding: 0.75rem 1.5rem;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            border: none;
-            cursor: pointer;
-            font-size: 0.9rem;
-        }
-        
-        .btn:hover {
-            background: var(--primary-dark);
-            transform: translateY(-2px);
-        }
-        
-        /* Pros/Cons Lists */
-        .pros-cons {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
-            margin: 1.5rem 0;
-        }
-        
-        @media (max-width: 768px) {
-            .pros-cons {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        .pros-list, .cons-list {
-            padding: 1.5rem;
-            border-radius: 8px;
-        }
-        
-        .pros-list {
-            background: #f0fdf4;
-            border-left: 4px solid var(--success);
-        }
-        
-        .cons-list {
-            background: #fef2f2;
-            border-left: 4px solid var(--danger);
-        }
-        
-        .pros-list h4, .cons-list h4 {
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        /* Markdown Content Styling */
-        .markdown-content h2 {
-            font-size: 1.6rem;
-            margin: 2.5rem 0 1rem 0;
-            color: var(--dark);
-            padding-bottom: 0.5rem;
-            border-bottom: 2px solid var(--border);
-        }
-        
-        .markdown-content h3 {
-            font-size: 1.3rem;
-            margin: 2rem 0 1rem 0;
-            color: var(--dark);
-        }
-        
-        .markdown-content h4 {
-            font-size: 1.1rem;
-            margin: 1.5rem 0 0.75rem 0;
-            color: var(--dark);
-        }
-        
-        .markdown-content p {
-            margin-bottom: 1rem;
-            line-height: 1.7;
-            color: #4b5563;
-        }
-        
-        .markdown-content ul, .markdown-content ol {
-            margin: 1rem 0;
-            padding-left: 2rem;
-        }
-        
-        .markdown-content li {
-            margin-bottom: 0.5rem;
-            line-height: 1.6;
-        }
-        
-        .markdown-content strong {
-            font-weight: 600;
-            color: var(--dark);
-        }
-        
-        .markdown-content em {
-            font-style: italic;
-            color: #6b7280;
-        }
-        
-        .markdown-content blockquote {
-            border-left: 4px solid var(--primary);
-            padding: 1rem 1.5rem;
-            margin: 1.5rem 0;
-            background: var(--light);
-            border-radius: 0 8px 8px 0;
-            font-style: italic;
         }
         
         /* Footer */
@@ -656,30 +673,23 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
                 grid-template-columns: 1fr;
             }
             
-            .comparison-table {
+            .specs-table {
                 font-size: 0.85rem;
-            }
-            
-            .comparison-table th,
-            .comparison-table td {
-                padding: 0.75rem 0.5rem;
-            }
-        }
-        
-        @media (max-width: 480px) {
-            .comparison-table {
                 display: block;
                 overflow-x: auto;
             }
             
-            .related-products {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 0.3rem;
+            .specs-table th,
+            .specs-table td {
+                padding: 0.75rem 0.5rem;
             }
             
-            .related-vs {
-                display: none;
+            .decision-questions {
+                padding: 2rem 1rem;
+            }
+            
+            .questions-grid {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -687,8 +697,8 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
 <body>
     <div class="container">
         <header class="header" role="banner">
-            <h1>${escapeHtml(frontmatter.title || formatComparisonSlug(slug))}</h1>
-            ${frontmatter.description ? `<p class="description">${escapeHtml(frontmatter.description)}</p>` : ''}
+            <h1>${escapeHtml(allFrontmatter.title || formatComparisonSlug(slug))}</h1>
+            ${allFrontmatter.description ? `<p class="description">${escapeHtml(allFrontmatter.description)}</p>` : ''}
         </header>
         
         <main role="main">
@@ -712,6 +722,55 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
                     <p style="color: #64748b;">${winners.performanceDescription || 'Top-tier performance for power users'}</p>
                 </div>
             </div>
+            
+            <!-- Enhanced Comparison Table -->
+            <div class="content-section">
+                <h2 class="section-title">📊 Key Specifications Comparison</h2>
+                ${renderComparisonTable(productData, products)}
+            </div>
+            
+            <!-- Individual Product Details -->
+            <div class="content-section">
+                <h2 class="section-title">🔍 Detailed Product Analysis</h2>
+                <div class="products-grid">
+                    ${productData.map(product => renderProductCard(product)).join('')}
+                </div>
+            </div>
+            
+            <!-- Decision Questions Section -->
+            <div class="decision-questions">
+                <h2>🤔 Questions to Ask Yourself</h2>
+                <p style="text-align: center; margin-bottom: 2rem; font-size: 1.1rem; opacity: 0.9;">
+                    Consider these factors when deciding which product is right for you
+                </p>
+                <div class="questions-grid">
+                    <div class="question-card">
+                        <h4>💰 Budget & Value</h4>
+                        <p>Which product offers the best features for your budget? Are premium features worth the extra cost?</p>
+                    </div>
+                    <div class="question-card">
+                        <h4>🎯 Primary Use Case</h4>
+                        <p>What will you use this for most often? Gaming, productivity, photography, or everyday tasks?</p>
+                    </div>
+                    <div class="question-card">
+                        <h4>⚡ Performance Needs</h4>
+                        <p>Do you need top-tier performance or is moderate speed sufficient for your requirements?</p>
+                    </div>
+                    <div class="question-card">
+                        <h4>🔋 Long-term Usage</h4>
+                        <p>How long do you plan to keep this product? Consider future-proofing and durability.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Comparison Video Section -->
+            ${extractComparisonVideo(content) ? `
+            <div class="content-section">
+                <h2 class="section-title">🎥 Side-by-Side Comparison Video</h2>
+                <p style="color: #64748b; margin-bottom: 1.5rem;">Watch these products compared in real-world scenarios</p>
+                ${extractComparisonVideo(content)}
+            </div>
+            ` : ''}
             
             <!-- Main Content -->
             <div class="content-section">
@@ -752,27 +811,21 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
         
         <footer class="footer" role="contentinfo">
             <p>© ${new Date().getFullYear()} ReviewIndex. All comparisons are independently researched.</p>
-            <p>Last updated: ${frontmatter.date ? new Date(frontmatter.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Recently'}</p>
+            <p>Last updated: ${allFrontmatter.date ? new Date(allFrontmatter.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Recently'}</p>
         </footer>
     </div>
     
     <script>
-        // Make images responsive
+        // Enhanced interactivity
         document.addEventListener('DOMContentLoaded', function() {
-            // Handle images
-            const images = document.querySelectorAll('.markdown-content img');
-            images.forEach(img => {
-                img.style.maxWidth = '100%';
-                img.style.height = 'auto';
-                img.style.borderRadius = '8px';
-                img.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-            });
-            
-            // Handle videos
-            const iframes = document.querySelectorAll('iframe');
-            iframes.forEach(iframe => {
-                iframe.style.width = '100%';
-                iframe.style.minHeight = '400px';
+            // Handle affiliate button clicks
+            const affiliateButtons = document.querySelectorAll('.affiliate-btn');
+            affiliateButtons.forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    // Track affiliate clicks (you can integrate with analytics here)
+                    console.log('Affiliate link clicked:', this.href);
+                    // The link will open in new tab as per target="_blank"
+                });
             });
             
             // Smooth scrolling for anchor links
@@ -788,344 +841,318 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
                     }
                 });
             });
+            
+            // Lazy loading for images
+            const images = document.querySelectorAll('img[data-src]');
+            const imageObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        img.src = img.dataset.src;
+                        img.classList.remove('lazy');
+                        imageObserver.unobserve(img);
+                    }
+                });
+            });
+            
+            images.forEach(img => imageObserver.observe(img));
         });
     </script>
 </body>
 </html>`;
 }
 
-function parseComparisonMarkdown(content) {
-    const frontmatter = {};
-    let markdownContent = content;
-    
-    // Parse YAML frontmatter
-    if (content.startsWith('---')) {
-        const end = content.indexOf('---', 3);
-        if (end !== -1) {
-            const yaml = content.substring(3, end).trim();
-            markdownContent = content.substring(end + 3).trim();
-            
-            yaml.split('\n').forEach(line => {
-                const colon = line.indexOf(':');
-                if (colon > 0) {
-                    const key = line.substring(0, colon).trim();
-                    let value = line.substring(colon + 1).trim();
-                    
-                    // Remove quotes
-                    if (value.startsWith('"') && value.endsWith('"')) {
-                        value = value.substring(1, value.length - 1);
-                    } else if (value.startsWith("'") && value.endsWith("'")) {
-                        value = value.substring(1, value.length - 1);
-                    } else if (value.startsWith('[') && value.endsWith(']')) {
-                        // Handle array values
-                        value = value.substring(1, value.length - 1).split(',').map(item => item.trim().replace(/"/g, ''));
-                    }
-                    
-                    frontmatter[key] = value;
-                }
-            });
-        }
-    }
-    
-    return { frontmatter, content: markdownContent };
-}
-
-function convertComparisonMarkdownToHTML(markdown, frontmatter) {
-    let html = markdown;
-    
-    // Clean up markdown artifacts and convert to proper HTML
-    html = html
-        // Remove button classes and convert to affiliate buttons
-        .replace(/\[([^\]]+)\]\(([^)]+)\)\{: \.btn \.btn-sm\}/g, '<a href="$2" class="affiliate-btn" target="_blank" rel="nofollow sponsored">$1</a>')
-        .replace(/\[([^\]]+)\]\(([^)]+)\)\{: \.btn \.btn-primary\}/g, '<a href="$2" class="affiliate-btn" target="_blank" rel="nofollow sponsored">$1</a>')
-        // Convert regular links
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-        // Convert bold and italic
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-        // Convert images
-        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="content-image" loading="lazy">');
-    
-    // Process tables (remove Quick Action column)
-    html = html.replace(/\|([^\n]+)\|\n\|([^\n]+)\|\n((?:\|[^\n]+\|\n?)+)/g, function(match, headers, separators, rows) {
-        const headerCells = headers.split('|').map(cell => cell.trim()).filter(cell => cell);
-        const rowLines = rows.trim().split('\n');
-        
-        // Remove Quick Action column if it exists
-        const quickActionIndex = headerCells.findIndex(header => header.toLowerCase().includes('quick action'));
-        const filteredHeaders = quickActionIndex !== -1 ? headerCells.filter((_, index) => index !== quickActionIndex) : headerCells;
-        
-        let tableHTML = '<table class="comparison-table">\n<thead>\n<tr>';
-        
-        // Add headers
-        filteredHeaders.forEach(header => {
-            tableHTML += `<th>${cleanCellContent(header)}</th>`;
-        });
-        tableHTML += '</tr>\n</thead>\n<tbody>';
-        
-        // Add rows
-        rowLines.forEach(line => {
-            const cells = line.split('|').map(cell => cell.trim()).filter(cell => cell);
-            const filteredCells = quickActionIndex !== -1 ? cells.filter((_, index) => index !== quickActionIndex) : cells;
-            
-            if (filteredCells.length > 0) {
-                tableHTML += '<tr>';
-                filteredCells.forEach((cell, index) => {
-                    const cellClass = index === 0 ? 'feature-cell' : '';
-                    tableHTML += `<td class="${cellClass}">${cleanCellContent(cell)}</td>`;
-                });
-                tableHTML += '</tr>';
-            }
-        });
-        
-        tableHTML += '</tbody>\n</table>';
-        return tableHTML;
-    });
-    
-    // Convert headings
-    html = html
-        .replace(/^# (.*)$/gm, '<h2>$1</h2>')
-        .replace(/^## (.*)$/gm, '<h3>$1</h3>')
-        .replace(/^### (.*)$/gm, '<h4>$1</h4>');
-    
-    // Convert lists
-    html = html.replace(/^- (.*)$/gm, '<li>$1</li>')
-               .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-    
-    // Convert paragraphs and handle product sections
-    const lines = html.split('\n');
-    let processedLines = [];
+function extractProductData(content, products) {
+    const productData = [];
+    const lines = content.split('\n');
+    let currentProduct = null;
     let inProductSection = false;
-    let currentProduct = '';
     
-    for (let line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) {
-            if (inProductSection) inProductSection = false;
-            continue;
-        }
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
         
         // Detect product sections
-        if (trimmed.startsWith('### ') && frontmatter.comparison_products) {
-            const productName = trimmed.replace('### ', '').trim();
-            if (frontmatter.comparison_products.includes(productName)) {
+        if (line.startsWith('### ') && products) {
+            const productName = line.replace('### ', '').trim();
+            if (products.includes(productName)) {
+                currentProduct = {
+                    name: productName,
+                    price: '',
+                    releaseDate: '',
+                    bestFor: '',
+                    rating: '',
+                    affiliateLink: '',
+                    image: '',
+                    video: '',
+                    pros: [],
+                    cons: [],
+                    specs: {}
+                };
                 inProductSection = true;
-                currentProduct = productName;
-                processedLines.push(`<div class="product-card" id="product-${productName.toLowerCase().replace(/\s+/g, '-')}">`);
-                processedLines.push(`<div class="product-header"><h3>${productName}</h3></div>`);
                 continue;
             }
         }
         
-        // Close product section
-        if (trimmed === '---' && inProductSection) {
-            inProductSection = false;
-            processedLines.push('</div>');
-            continue;
+        if (inProductSection && currentProduct) {
+            // Extract price
+            if (line.startsWith('**Price:**')) {
+                currentProduct.price = line.replace('**Price:**', '').trim();
+            }
+            // Extract release date
+            else if (line.startsWith('**Release Date:**')) {
+                currentProduct.releaseDate = line.replace('**Release Date:**', '').trim();
+            }
+            // Extract best for
+            else if (line.startsWith('**Best For:**')) {
+                currentProduct.bestFor = line.replace('**Best For:**', '').trim();
+            }
+            // Extract rating
+            else if (line.startsWith('**Overall Rating:**')) {
+                currentProduct.rating = line.replace('**Overall Rating:**', '').trim();
+            }
+            // Extract affiliate link
+            else if (line.includes('[**Check Current Price & Offers**]')) {
+                const match = line.match(/\[.*\]\((.*)\)/);
+                if (match) {
+                    currentProduct.affiliateLink = match[1];
+                }
+            }
+            // Extract image
+            else if (line.startsWith('![')) {
+                const match = line.match(/!\[.*\]\((.*)\)/);
+                if (match) {
+                    currentProduct.image = match[1];
+                }
+            }
+            // Extract video
+            else if (line.includes('youtube.com') || line.includes('youtu.be')) {
+                const match = line.match(/src="([^"]*)"/);
+                if (match) {
+                    currentProduct.video = match[1];
+                }
+            }
+            // Extract pros
+            else if (line.startsWith('✅')) {
+                currentProduct.pros.push(line.replace('✅', '').trim());
+            }
+            // Extract cons
+            else if (line.startsWith('❌')) {
+                currentProduct.cons.push(line.replace('❌', '').trim());
+            }
+            // Extract specifications
+            else if (line.includes(':')) {
+                const [key, value] = line.split(':').map(part => part.trim());
+                if (key && value && !key.startsWith('**') && !value.startsWith('[')) {
+                    currentProduct.specs[key] = value;
+                }
+            }
+            
+            // End of product section
+            if (line === '---' && inProductSection) {
+                productData.push(currentProduct);
+                inProductSection = false;
+                currentProduct = null;
+            }
         }
+    }
+    
+    return productData;
+}
+
+function renderComparisonTable(productData, products) {
+    if (productData.length === 0) return '';
+    
+    const commonSpecs = Object.keys(productData[0].specs || {});
+    
+    return `
+    <table class="specs-table">
+        <thead>
+            <tr>
+                <th>Feature</th>
+                ${products.map(product => `<th>${escapeHtml(product)}</th>`).join('')}
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Price Row -->
+            <tr>
+                <td class="feature-cell">💰 Price</td>
+                ${productData.map(product => `
+                    <td class="product-cell">
+                        ${product.price ? `<div class="price-badge">${escapeHtml(product.price)}</div>` : 'N/A'}
+                        ${product.affiliateLink ? `
+                            <a href="${escapeHtml(product.affiliateLink)}" class="affiliate-btn" target="_blank" rel="nofollow sponsored">
+                                Check Price & Offers
+                            </a>
+                        ` : ''}
+                    </td>
+                `).join('')}
+            </tr>
+            
+            <!-- Release Date Row -->
+            <tr>
+                <td class="feature-cell">📅 Release Date</td>
+                ${productData.map(product => `
+                    <td class="product-cell">${product.releaseDate ? escapeHtml(product.releaseDate) : 'N/A'}</td>
+                `).join('')}
+            </tr>
+            
+            <!-- Best For Row -->
+            <tr>
+                <td class="feature-cell">🎯 Best For</td>
+                ${productData.map(product => `
+                    <td class="product-cell">${product.bestFor ? escapeHtml(product.bestFor) : 'N/A'}</td>
+                `).join('')}
+            </tr>
+            
+            <!-- Rating Row -->
+            <tr>
+                <td class="feature-cell">⭐ Rating</td>
+                ${productData.map(product => `
+                    <td class="product-cell">
+                        ${product.rating ? `
+                            <div class="rating-stars">${escapeHtml(product.rating)}</div>
+                        ` : 'N/A'}
+                    </td>
+                `).join('')}
+            </tr>
+            
+            <!-- Specifications -->
+            ${commonSpecs.map(spec => `
+                <tr>
+                    <td class="feature-cell">${escapeHtml(spec)}</td>
+                    ${productData.map(product => `
+                        <td class="product-cell">${escapeHtml(product.specs[spec] || 'N/A')}</td>
+                    `).join('')}
+                </tr>
+            `).join('')}
+        </tbody>
+    </table>`;
+}
+
+function renderProductCard(product) {
+    return `
+    <div class="product-card" id="product-${product.name.toLowerCase().replace(/\s+/g, '-')}">
+        <div class="product-header">
+            ${product.image ? `<img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}" class="product-image" loading="lazy">` : ''}
+            <h3>${escapeHtml(product.name)}</h3>
+            ${product.price ? `<div class="price-badge">${escapeHtml(product.price)}</div>` : ''}
+            ${product.rating ? `<div class="rating-stars">${escapeHtml(product.rating)}</div>` : ''}
+        </div>
         
-        if (inProductSection) {
-            // Handle product-specific content
-            if (trimmed.startsWith('<img')) {
-                processedLines.push(trimmed);
-            } else if (trimmed.startsWith('**Price:**') || trimmed.startsWith('**Release Date:**') || 
-                       trimmed.startsWith('**Best For:**') || trimmed.startsWith('**Overall Rating:**')) {
-                processedLines.push(`<p>${trimmed.replace(/\*\*(.*?):\*\*/g, '<strong>$1:</strong>')}</p>`);
-            } else if (trimmed.startsWith('[**Check Current Price & Offers**]')) {
-                processedLines.push(trimmed);
-            } else if (trimmed.startsWith('#### Key Features & Specifications')) {
-                processedLines.push('<h4>Key Features & Specifications</h4>');
-            } else if (trimmed.startsWith('#### Pros')) {
-                processedLines.push('<div class="pros-list"><h4>✅ Pros</h4>');
-            } else if (trimmed.startsWith('#### Cons')) {
-                processedLines.push('</div><div class="cons-list"><h4>❌ Cons</h4>');
-            } else if (trimmed.startsWith('#### Video Review')) {
-                processedLines.push('</div>'); // Close pros/cons
-                processedLines.push('<h4>Video Review</h4>');
-            } else if (trimmed.startsWith('- **')) {
-                processedLines.push(`<li>${trimmed.replace('- **', '').replace(':**', ':').replace(/\*\*/g, '')}</li>`);
-            } else if (trimmed.startsWith('✅') || trimmed.startsWith('❌')) {
-                processedLines.push(`<li>${trimmed.substring(2)}</li>`);
-            } else if (trimmed.startsWith('<iframe')) {
-                processedLines.push('<div class="video-embed">');
-                processedLines.push('<div class="video-wrapper">');
-                processedLines.push(trimmed);
-                processedLines.push('</div></div>');
-            } else if (!trimmed.startsWith('<') && !trimmed.startsWith('#') && !trimmed.startsWith('|')) {
-                processedLines.push(`<p>${trimmed}</p>`);
-            } else {
-                processedLines.push(trimmed);
-            }
-        } else {
-            // Regular content
-            if (trimmed.startsWith('<') || trimmed.startsWith('|') || trimmed.startsWith('- ') || trimmed.startsWith('<li>')) {
-                processedLines.push(trimmed);
-            } else if (!trimmed.startsWith('#') && !trimmed.startsWith('<')) {
-                processedLines.push(`<p>${trimmed}</p>`);
-            } else {
-                processedLines.push(trimmed);
-            }
-        }
-    }
-    
-    // Close any open product section
-    if (inProductSection) {
-        processedLines.push('</div>');
-    }
-    
-    html = processedLines.join('\n');
-    
-    return html;
+        ${product.affiliateLink ? `
+            <a href="${escapeHtml(product.affiliateLink)}" class="affiliate-btn" target="_blank" rel="nofollow sponsored">
+                ✅ Check Current Price & Offers
+            </a>
+        ` : ''}
+        
+        ${product.bestFor ? `
+            <p><strong>Best For:</strong> ${escapeHtml(product.bestFor)}</p>
+        ` : ''}
+        
+        <!-- Pros and Cons -->
+        <div class="pros-cons">
+            ${product.pros.length > 0 ? `
+            <div class="pros-list">
+                <h4>✅ Pros</h4>
+                <ul>
+                    ${product.pros.map(pro => `<li>${escapeHtml(pro)}</li>`).join('')}
+                </ul>
+            </div>
+            ` : ''}
+            
+            ${product.cons.length > 0 ? `
+            <div class="cons-list">
+                <h4>❌ Cons</h4>
+                <ul>
+                    ${product.cons.map(con => `<li>${escapeHtml(con)}</li>`).join('')}
+                </ul>
+            </div>
+            ` : ''}
+        </div>
+        
+        <!-- Video Review -->
+        ${product.video ? `
+            <div class="video-embed">
+                <h4>🎥 Video Review</h4>
+                <div class="video-wrapper">
+                    <iframe src="${escapeHtml(product.video)}" 
+                            title="${escapeHtml(product.name)} Review Video" 
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                            allowfullscreen>
+                    </iframe>
+                </div>
+            </div>
+        ` : ''}
+    </div>`;
 }
 
-function extractWinnersFromContent(content) {
-    const winners = {};
-    
-    // Extract overall winner
-    const overallMatch = content.match(/🏆 Overall Winner: ([^\n*]+)(?:\n\*([^\n*]+)\*)?/);
-    if (overallMatch) {
-        winners.overall = overallMatch[1].trim();
-        winners.overallDescription = overallMatch[2] ? overallMatch[2].trim() : '';
+function extractComparisonVideo(content) {
+    const videoMatch = content.match(/<iframe[^>]*src="([^"]*)"[^>]*><\/iframe>/);
+    if (videoMatch) {
+        return `
+        <div class="video-wrapper">
+            <iframe src="${escapeHtml(videoMatch[1])}" 
+                    title="Product Comparison Video" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen>
+            </iframe>
+        </div>`;
     }
-    
-    // Extract budget winner
-    const budgetMatch = content.match(/💰 Best Value: ([^\n*]+)(?:\n\*([^\n*]+)\*)?/);
-    if (budgetMatch) {
-        winners.budget = budgetMatch[1].trim();
-        winners.budgetDescription = budgetMatch[2] ? budgetMatch[2].trim() : '';
-    }
-    
-    // Extract performance winner
-    const performanceMatch = content.match(/⚡ Performance King: ([^\n*]+)(?:\n\*([^\n*]+)\*)?/);
-    if (performanceMatch) {
-        winners.performance = performanceMatch[1].trim();
-        winners.performanceDescription = performanceMatch[2] ? performanceMatch[2].trim() : '';
-    }
-    
-    return winners;
+    return '';
 }
 
-function cleanCellContent(content) {
-    return content
-        .replace(/{:\s*[^}]*}/g, '')
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .trim();
-}
+// ... (keep the existing parseComparisonMarkdown, convertComparisonMarkdownToHTML, 
+// extractWinnersFromContent, cleanCellContent, formatComparisonSlug, escapeHtml, 
+// and renderErrorPage functions exactly as they were in your original code)
 
-function generateComparisonSchema(frontmatter, slug, canonicalUrl, products) {
-    return JSON.stringify({
+function generateEnhancedComparisonSchema(frontmatter, slug, canonicalUrl, products, productData) {
+    const schema = {
         "@context": "https://schema.org",
-        "@type": "Article",
-        "headline": frontmatter.title || formatComparisonSlug(slug),
+        "@type": "ProductGroup",
+        "name": frontmatter.title || formatComparisonSlug(slug),
         "description": frontmatter.description || `Comparison of ${products.join(' vs ')}`,
-        "image": frontmatter.featured_image || '',
-        "datePublished": frontmatter.date || new Date().toISOString(),
-        "dateModified": frontmatter.date || new Date().toISOString(),
-        "author": {
-            "@type": "Organization",
-            "name": "ReviewIndex"
-        },
-        "publisher": {
-            "@type": "Organization",
-            "name": "ReviewIndex",
-            "logo": {
-                "@type": "ImageObject",
-                "url": "https://reviewindex.pages.dev/logo.png"
+        "url": canonicalUrl,
+        "product": productData.map((product, index) => ({
+            "@type": "Product",
+            "name": product.name,
+            "description": `Detailed review and specifications for ${product.name}`,
+            "brand": {
+                "@type": "Brand",
+                "name": product.name.split(' ')[0] // Extract brand from product name
+            },
+            "offers": {
+                "@type": "Offer",
+                "price": extractPriceValue(product.price),
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock",
+                "url": product.affiliateLink || canonicalUrl
+            },
+            "review": {
+                "@type": "Review",
+                "reviewRating": {
+                    "@type": "Rating",
+                    "ratingValue": extractRatingValue(product.rating),
+                    "bestRating": "5"
+                }
             }
-        },
+        })),
         "mainEntityOfPage": {
             "@type": "WebPage",
             "@id": canonicalUrl
-        },
-        "articleSection": "Product Comparisons"
-    }, null, 2);
-}
-
-function formatComparisonSlug(slug) {
-    return slug.split('-')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ')
-        .replace(/ Vs /g, ' vs ');
-}
-
-function escapeHtml(unsafe) {
-    if (!unsafe) return '';
-    return unsafe
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
-function renderErrorPage(title, message) {
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>${title} - ReviewIndex</title>
-    <meta name="robots" content="noindex">
-    <style>
-        body { 
-            font-family: system-ui, sans-serif; 
-            text-align: center; 
-            padding: 2rem; 
-            background: #f5f5f5;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
         }
-        .error-container { 
-            background: white; 
-            padding: 3rem; 
-            border-radius: 12px; 
-            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-            max-width: 500px;
-            width: 100%;
-        }
-        h1 { 
-            color: #dc2626; 
-            margin-bottom: 1rem;
-            font-size: 2rem;
-        }
-        p {
-            color: #666;
-            margin-bottom: 2rem;
-            line-height: 1.6;
-        }
-        a { 
-            color: #2563eb; 
-            text-decoration: none;
-            font-weight: 600;
-            padding: 0.75rem 1.5rem;
-            border: 2px solid #2563eb;
-            border-radius: 6px;
-            transition: all 0.3s ease;
-        }
-        a:hover {
-            background: #2563eb;
-            color: white;
-        }
-    </style>
-</head>
-<body>
-    <div class="error-container">
-        <h1>⚠️ ${title}</h1>
-        <p>${message}</p>
-        <a href="/comparisons">← Return to Comparisons</a>
-    </div>
-</body>
-</html>`;
+    };
     
-    return new Response(html, { 
-        status: 404,
-        headers: { 
-            'Content-Type': 'text/html',
-            'Cache-Control': 'no-cache, no-store, must-revalidate'
-        }
-    });
-                               }
+    return JSON.stringify(schema, null, 2);
+}
+
+function extractPriceValue(priceText) {
+    if (!priceText) return '0';
+    const match = priceText.match(/\$([0-9,]+)/);
+    return match ? match[1].replace(',', '') : '0';
+}
+
+function extractRatingValue(ratingText) {
+    if (!ratingText) return '0';
+    const match = ratingText.match(/([0-9.]+)/);
+    return match ? match[1] : '0';
+                    }
