@@ -98,17 +98,17 @@ ${p.image ? `![${p.name}](${p.image})` : ''}
 
 ${p.affiliateLink ? `[**Check Current Price & Offers**](${p.affiliateLink}){: .btn .btn-primary}` : ''}
 
-#### Key Features & Specifications
+## Key Features & Specifications
 ${Object.entries(p.specs || {}).map(([key, value]) => `- **${key}:** ${value}`).join('\n')}
 
-#### Pros
+## Pros
 ${(p.pros || []).map(item => `✅ ${item}`).join('\n') || '- No major pros listed'}
 
-#### Cons
+## Cons
 ${(p.cons || []).map(item => `❌ ${item}`).join('\n') || '- No major cons listed'}
 
 ${p.youtubeId ? `
-#### Video Review
+## Video Review
 <iframe width="100%" height="400" src="https://www.youtube.com/embed/${p.youtubeId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 ` : ''}
 
@@ -206,7 +206,7 @@ function generateComparisonTableRows(products) {
     
     // Quick Action row
     const actions = products.map(p => 
-        p.affiliateLink ? `[Check Price](${p.affiliateLink}){: .btn .btn-sm}` : '–'
+        p.affiliateLink ? `[Check Price](${p.affiliateLink})` : '–'
     );
     commonRows.push(`| **Quick Action** | ${actions.join(' | ')} |`);
     
