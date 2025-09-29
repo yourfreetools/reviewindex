@@ -1,4 +1,6 @@
 // functions/comparison/[...slug].js
+import { caches } from 'cache';
+
 export async function onRequest(context) {
     const { request, params, env } = context;
     const slug = params.slug;
@@ -15,13 +17,15 @@ export async function onRequest(context) {
     
     try {
         // If it's a direct file request for .md, redirect to proper URL
-        if (slug.endsWith('.md')) {
-            const cleanSlug = slug.replace('.md', '');
+        if (slug && slug.length > 0 && slug[0].endsWith('.md')) {
+            const cleanSlug = slug[0].replace('.md', '');
             return Response.redirect(`${new URL(request.url).origin}/comparison/${cleanSlug}`, 301);
         }
 
+        const slugString = Array.isArray(slug) ? slug.join('/') : slug;
+        
         // Fetch the comparison content from GitHub
-        const comparisonContent = await fetchComparisonContent(slug, env.GITHUB_TOKEN);
+        const comparisonContent = await fetchComparisonContent(slugString, env.GITHUB_TOKEN);
         
         if (!comparisonContent) {
             return renderErrorPage('Comparison not found', 'The requested comparison could not be found.');
@@ -29,10 +33,10 @@ export async function onRequest(context) {
 
         // Get related comparisons from latest 5 files only
         const { frontmatter } = parseComparisonMarkdown(comparisonContent);
-        const relatedComparisons = await fetchRelatedComparisons(slug, frontmatter.categories, env.GITHUB_TOKEN);
+        const relatedComparisons = await fetchRelatedComparisons(slugString, frontmatter.categories, env.GITHUB_TOKEN);
 
         // Convert markdown to HTML and render the comparison page
-        const htmlContent = await renderComparisonPage(comparisonContent, slug, request.url, relatedComparisons);
+        const htmlContent = await renderComparisonPage(comparisonContent, slugString, request.url, relatedComparisons);
         
         // Create response with Cloudflare caching
         response = new Response(htmlContent, {
@@ -390,26 +394,6 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
             padding: 1rem;
         }
         
-        /* Product Info Sections */
-        .product-info-section {
-            padding: 1.5rem 2rem;
-            border-bottom: 1px solid var(--border);
-        }
-        
-        .product-info-section:last-child {
-            border-bottom: none;
-        }
-        
-        .info-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: var(--dark);
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
         /* Specifications Table */
         .specs-table {
             width: 100%;
@@ -441,97 +425,6 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
         
         .specs-table tr:nth-child(even) td {
             background: var(--light);
-        }
-        
-        /* Features List */
-        .features-list {
-            list-style: none;
-            padding: 0;
-        }
-        
-        .features-list li {
-            padding: 0.5rem 0;
-            border-bottom: 1px solid var(--border);
-            line-height: 1.6;
-            display: flex;
-            align-items: flex-start;
-            gap: 0.5rem;
-        }
-        
-        .features-list li:before {
-            content: "✓";
-            color: var(--success);
-            font-weight: bold;
-        }
-        
-        .features-list li:last-child {
-            border-bottom: none;
-        }
-        
-        /* Pros/Cons Lists */
-        .pros-cons-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
-            margin: 1.5rem 0;
-        }
-        
-        @media (max-width: 768px) {
-            .pros-cons-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        .pros-list, .cons-list {
-            padding: 1.5rem;
-            border-radius: 12px;
-        }
-        
-        .pros-list {
-            background: var(--success-light);
-            border: 1px solid var(--success);
-        }
-        
-        .cons-list {
-            background: #fef2f2;
-            border: 1px solid var(--danger);
-        }
-        
-        .pros-list h4, .cons-list h4 {
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            color: var(--dark);
-        }
-        
-        .pros-list ul, .cons-list ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        
-        .pros-list li, .cons-list li {
-            padding: 0.5rem 0;
-            border-bottom: 1px solid rgba(0,0,0,0.1);
-            line-height: 1.5;
-            display: flex;
-            align-items: flex-start;
-            gap: 0.5rem;
-        }
-        
-        .pros-list li:before {
-            content: "✅";
-            flex-shrink: 0;
-        }
-        
-        .cons-list li:before {
-            content: "❌";
-            flex-shrink: 0;
-        }
-        
-        .pros-list li:last-child, .cons-list li:last-child {
-            border-bottom: none;
         }
         
         /* Affiliate Buttons */
@@ -630,31 +523,6 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
         
         .comparison-table tr:nth-child(even) {
             background: var(--light);
-        }
-        
-        /* Video Embeds */
-        .video-section {
-            margin: 2rem 0;
-        }
-        
-        .video-wrapper {
-            position: relative;
-            width: 100%;
-            height: 0;
-            padding-bottom: 56.25%;
-            margin: 1rem 0;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-        }
-        
-        .video-wrapper iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border: none;
         }
         
         /* Related Comparisons */
@@ -852,10 +720,6 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
                 padding: 0.75rem 0.5rem;
             }
             
-            .product-info-section {
-                padding: 1rem;
-            }
-            
             .affiliate-btn {
                 padding: 0.875rem 1.5rem;
                 font-size: 1rem;
@@ -978,14 +842,6 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
             document.querySelectorAll('.affiliate-btn').forEach(btn => {
                 btn.setAttribute('target', '_blank');
                 btn.setAttribute('rel', 'nofollow sponsored');
-            });
-            
-            // Add click tracking for affiliate links
-            document.querySelectorAll('a[rel*="sponsored"]').forEach(link => {
-                link.addEventListener('click', function() {
-                    // You can add analytics tracking here
-                    console.log('Affiliate link clicked:', this.href);
-                });
             });
         });
     </script>
@@ -1244,9 +1100,15 @@ function formatComparisonSlug(slug) {
 }
 
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    
+    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
 }
 
 function renderErrorPage(title, message) {
@@ -1272,4 +1134,4 @@ function renderErrorPage(title, message) {
         status: 404,
         headers: { 'Content-Type': 'text/html' }
     });
-                                              }
+                    }
