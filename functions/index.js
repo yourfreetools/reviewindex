@@ -894,7 +894,7 @@ function generateIndexHTML(latestPosts, allPostNames) {
                 </a>
                 <ul class="nav-links">
                     <li><a href="reviews">Reviews</a></li>
-                    <li><a href="comparisons">Comparisons</a></li>
+                    <li><a href="https://reviewindex.pages.dev/comparisons">Comparisons</a></li>
                     <li><a href="https://www.youtube.com/channel/UCii1s_g9GPERU4VxXkfsNxw">YouTube</a></li>
                 </ul>
             </nav>
