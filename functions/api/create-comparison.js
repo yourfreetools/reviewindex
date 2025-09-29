@@ -318,7 +318,7 @@ function generateSlug(title) {
         .replace(/[^a-z0-9 -]/g, '')
         .replace(/\s+/g, '-')
         .replace(/-+/g, '-')
-        .substring(, 60);
+        .substring(0, 60);  // Fixed the syntax error here
 }
 
 async function publishToGitHub({ token, content, title, filename }) {
