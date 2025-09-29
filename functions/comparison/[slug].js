@@ -2,8 +2,7 @@
 const CACHE_TTL = 15552000; // 6 months
 const GITHUB_CONFIG = {
   owner: 'yourfreetools',
-  repo: 'reviewindex',
-  branch: 'main'
+  repo: 'reviewindex'
 };
 
 export async function onRequest({ request, params, env }) {
@@ -25,7 +24,7 @@ export async function onRequest({ request, params, env }) {
     const winners = extractWinners(markdown);
     
     const related = await fetchRelatedComparisons(slug, frontmatter.categories, env.GITHUB_TOKEN);
-    const html = await renderComparisonPage({ frontmatter, markdown, slug, products, winners, related });
+    const html = renderComparisonPage({ frontmatter, markdown, slug, products, winners, related });
 
     return new Response(html, {
       headers: {
@@ -114,25 +113,32 @@ function parseFrontmatter(content) {
   const frontmatter = {};
   let markdown = content;
 
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  // Simple YAML frontmatter parser
+  const frontmatterMatch = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);
   if (frontmatterMatch) {
     const [, yaml, mdContent] = frontmatterMatch;
     markdown = mdContent.trim();
 
-    yaml.split('\n').forEach(line => {
-      const [key, ...valueParts] = line.split(':');
-      if (!key || !valueParts.length) return;
+    const lines = yaml.split('\n');
+    for (const line of lines) {
+      const colonIndex = line.indexOf(':');
+      if (colonIndex === -1) continue;
 
-      let value = valueParts.join(':').trim();
-      
-      if (value.startsWith('[') && value.endsWith(']')) {
-        value = value.slice(1, -1).split(',').map(v => v.trim().replace(/^["']|["']$/g, ''));
-      } else if (value.startsWith('"') && value.endsWith('"') || value.startsWith("'") && value.endsWith("'")) {
+      const key = line.slice(0, colonIndex).trim();
+      let value = line.slice(colonIndex + 1).trim();
+
+      // Remove quotes if present
+      if ((value.startsWith('"') && value.endsWith('"')) || 
+          (value.startsWith("'") && value.endsWith("'"))) {
         value = value.slice(1, -1);
       }
+      // Parse arrays
+      else if (value.startsWith('[') && value.endsWith(']')) {
+        value = value.slice(1, -1).split(',').map(v => v.trim().replace(/^["']|["']$/g, ''));
+      }
 
-      frontmatter[key.trim()] = value;
-    });
+      frontmatter[key] = value;
+    }
   }
 
   return { frontmatter, markdown };
@@ -169,13 +175,13 @@ function getDefaultDescription(type) {
   return descriptions[type] || '';
 }
 
-async function renderComparisonPage({ frontmatter, markdown, slug, products, winners, related }) {
+function renderComparisonPage({ frontmatter, markdown, slug, products, winners, related }) {
   const title = frontmatter.title || generateTitle(products);
   const description = frontmatter.description || generateDescription(products);
   const canonicalUrl = `https://reviewindex.pages.dev/comparison/${slug}`;
 
   const schema = generateStructuredData({ frontmatter, slug, products, winners });
-  const htmlContent = await processMarkdown(markdown);
+  const htmlContent = processMarkdown(markdown);
 
   return `<!DOCTYPE html>
 <html lang="en" itemscope itemtype="https://schema.org/Product">
@@ -232,9 +238,7 @@ function renderMetaTags({ title, description, frontmatter, canonicalUrl, product
     
     <!-- Additional Meta -->
     <meta name="theme-color" content="#2563eb">
-    <link rel="icon" href="/favicon.ico" sizes="any">
-    <link rel="icon" href="/icon.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png">`;
+    <link rel="icon" href="/favicon.ico">`;
 }
 
 function renderStructuredData(schema) {
@@ -436,6 +440,24 @@ function renderStyles() {
       border-bottom: 1px solid var(--gray-200);
     }
     
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      height: 0;
+      padding-bottom: 56.25%;
+      margin: 1rem 0;
+    }
+    
+    .video-wrapper iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: 8px;
+    }
+    
     .related-section {
       margin: 3rem 0;
       padding: 2rem;
@@ -570,46 +592,67 @@ function renderScripts() {
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       // Lazy load images
-      const images = document.querySelectorAll('img[loading="lazy"]');
+      const images = document.querySelectorAll('img[data-src]');
       const observer = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
             const img = entry.target;
             img.src = img.dataset.src;
+            img.removeAttribute('data-src');
             observer.unobserve(img);
           }
         });
       });
       
       images.forEach(img => observer.observe(img));
-      
-      // Affiliate link tracking
-      document.querySelectorAll('a[rel*="sponsored"]').forEach(link => {
-        link.addEventListener('click', (e) => {
-          console.log('Affiliate click:', e.target.href);
-        });
-      });
     });
   </script>`;
 }
 
-async function processMarkdown(markdown) {
+function processMarkdown(markdown) {
   let html = markdown;
-  
-  // Convert basic markdown syntax
-  html = html
-    .replace(/### (.*?)\n/g, '<h3>$1</h3>')
-    .replace(/## (.*?)\n/g, '<h2>$1</h2>')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/!\[(.*?)\]\((.*?)\)/g, '<img data-src="$2" alt="$1" loading="lazy" class="product-image">')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)\{: \.btn \.btn-(?:primary|sm)\}/g, 
-      '<a href="$2" class="affiliate-btn" target="_blank" rel="nofollow sponsored">$1</a>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // Convert headers
+  html = html.replace(/### (.*?)\n/g, '<h3>$1</h3>');
+  html = html.replace(/## (.*?)\n/g, '<h2>$1</h2>');
+  html = html.replace(/# (.*?)\n/g, '<h1>$1</h1>');
+
+  // Convert bold and italic
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+  // Convert images
+  html = html.replace(/!\[(.*?)\]\((.*?)\)/g, '<img data-src="$2" alt="$1" loading="lazy" class="product-image">');
+
+  // Convert affiliate buttons
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)\{: \.btn \.btn-(?:primary|sm)\}/g, 
+    '<a href="$2" class="affiliate-btn" target="_blank" rel="nofollow sponsored">$1</a>');
+
+  // Convert regular links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
   // Preserve iframes (videos)
   html = html.replace(/<iframe[^>]*><\/iframe>/g, 
-    '<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;">$&</div>');
+    '<div class="video-wrapper">$&</div>');
+
+  // Convert tables (basic support)
+  html = html.replace(/\|([^\n]+)\|/g, (match) => {
+    const cells = match.split('|').map(cell => cell.trim()).filter(cell => cell);
+    if (cells.length === 0) return '';
+    
+    const isHeader = cells.some(cell => cell.includes('---'));
+    if (isHeader) return '';
+    
+    return `<tr>${cells.map(cell => `<td>${cell}</td>`).join('')}</tr>`;
+  });
+
+  // Wrap tables
+  html = html.replace(/(<tr>.*?<\/tr>)/gs, (match) => {
+    if (match.includes('<td>')) {
+      return `<table class="comparison-table">${match}</table>`;
+    }
+    return match;
+  });
 
   return html;
 }
@@ -690,4 +733,4 @@ function errorTemplate() {
   <p>An error occurred while loading the comparison.</p>
   <a href="/">Return Home</a>
 </body></html>`;
-          }
+                                             }
