@@ -310,7 +310,7 @@ ${generateEnhancedTradeoffs(data.products)}
 `;
 }
 
-// Generate enhanced tradeoffs
+// Generate enhanced tradeoffs - GENERIC VERSION
 function generateEnhancedTradeoffs(products) {
     const tradeoffs = [];
     
@@ -322,37 +322,30 @@ function generateEnhancedTradeoffs(products) {
         const mostExpensive = pricedProducts[pricedProducts.length - 1];
         
         const priceDiff = extractPrice(mostExpensive.price) - extractPrice(cheapest.price);
-        tradeoffs.push(`- **Price vs Performance:** ${cheapest.name} ($${extractPrice(cheapest.price)}) offers the best value, while ${mostExpensive.name} ($${extractPrice(mostExpensive.price)}) provides premium features at ${priceDiff > 300 ? 'a significant' : 'a moderate'} premium`);
+        const premiumLevel = priceDiff > (extractPrice(cheapest.price) * 0.5) ? 'a significant' : 'a moderate';
+        tradeoffs.push(`- **Price vs Value:** ${cheapest.name} ($${extractPrice(cheapest.price)}) offers the best value, while ${mostExpensive.name} ($${extractPrice(mostExpensive.price)}) provides premium features at ${premiumLevel} premium`);
     }
     
-    // Performance vs Battery tradeoff
-    const performanceProducts = products.map(p => ({
-        name: p.name,
-        performance: getPerformanceScore(p),
-        battery: getBatteryScore(p)
-    }));
-    
-    if (performanceProducts.length >= 2) {
-        performanceProducts.sort((a, b) => b.performance - a.performance);
-        tradeoffs.push(`- **Performance Leader:** ${performanceProducts[0].name} offers the best overall performance`);
-        
-        performanceProducts.sort((a, b) => b.battery - a.battery);
-        tradeoffs.push(`- **Battery Life:** ${performanceProducts[0].name} provides the longest usage time`);
+    // Performance comparison based on ratings
+    const ratedProducts = products.filter(p => p.rating);
+    if (ratedProducts.length >= 2) {
+        ratedProducts.sort((a, b) => b.rating - a.rating);
+        tradeoffs.push(`- **Overall Performance:** ${ratedProducts[0].name} offers the best overall performance based on user ratings`);
     }
     
-    // Feature-specific comparisons
-    const importantFeatures = ['Display', 'Camera', 'Storage', 'Weight', 'Connectivity'];
-    importantFeatures.forEach(feature => {
+    // Feature-specific comparisons based on common specs
+    const commonSpecs = findCommonSpecs(products);
+    commonSpecs.slice(0, 3).forEach(spec => {
         const featureData = products.map(p => ({
             name: p.name,
-            value: getSpecValue(p.specs, feature),
-            score: rateSpecValue(getSpecValue(p.specs, feature))
+            value: getSpecValue(p.specs, spec),
+            score: rateSpecValue(getSpecValue(p.specs, spec))
         })).filter(p => p.value);
         
         if (featureData.length >= 2) {
             featureData.sort((a, b) => b.score - a.score);
             if (featureData[0].score > featureData[1].score) {
-                tradeoffs.push(`- **${feature}:** ${featureData[0].name} leads with ${featureData[0].value}`);
+                tradeoffs.push(`- **${spec}:** ${featureData[0].name} leads with ${featureData[0].value}`);
             }
         }
     });
@@ -381,27 +374,51 @@ function generateBudgetRecommendations(products) {
     return recommendations.join('\n');
 }
 
-// Generate use case recommendations
+// Generate use case recommendations - GENERIC VERSION
 function generateUseCaseRecommendations(products) {
     const useCases = {
-        'Professional Work': ['performance', 'display', 'storage'],
-        'Gaming': ['performance', 'graphics', 'cooling'],
-        'Content Creation': ['display', 'storage', 'performance'],
-        'Everyday Use': ['battery', 'portability', 'value'],
-        'Travel': ['portability', 'battery', 'durability']
+        'Everyday Use': 'Reliable performance for daily needs',
+        'Premium Experience': 'Top-quality features and performance', 
+        'Budget-Conscious': 'Best value for money',
+        'Specific Needs': 'Specialized features for particular requirements',
+        'Long-term Investment': 'Durability and lasting quality'
     };
     
-    const recommendations = Object.entries(useCases).map(([useCase, features]) => {
-        const scores = products.map(p => ({
-            name: p.name,
-            score: calculateUseCaseScore(p, features)
-        }));
+    const recommendations = Object.entries(useCases).map(([useCase, description]) => {
+        // Simple scoring based on product characteristics
+        const scores = products.map(p => {
+            let score = p.rating || 3;
+            const price = extractPrice(p.price);
+            
+            // Adjust scoring based on use case
+            if (useCase === 'Budget-Conscious' && price && price < 50) score += 2;
+            if (useCase === 'Premium Experience' && p.rating > 4) score += 2;
+            if (useCase === 'Long-term Investment' && price && price > 100) score += 1;
+            
+            return { name: p.name, score };
+        });
         
         scores.sort((a, b) => b.score - a.score);
-        return `- **${useCase}:** ${scores[0].name} - Best suited for ${useCase.toLowerCase()}`;
+        return `- **${useCase}:** ${scores[0].name} - ${description}`;
     });
     
     return recommendations.join('\n');
+}
+
+// Generate decision factors - GENERIC VERSION
+function generateDecisionFactors(products) {
+    const factors = [
+        "**Budget:** How much are you willing to spend?",
+        "**Primary Use:** What will you use it for most often?",
+        "**Key Features:** Which features are most important to you?",
+        "**Quality vs Price:** Are you looking for premium quality or best value?",
+        "**Brand Preference:** Do you have any brand loyalty or requirements?",
+        "**User Experience:** How important is ease of use and convenience?",
+        "**Long-term Value:** Are you looking for durability and long-term use?",
+        "**Specific Needs:** Do you have any special requirements or preferences?"
+    ];
+    
+    return factors.map(f => `- ${f}`).join('\n');
 }
 
 // Helper functions
@@ -423,14 +440,13 @@ function findCommonSpecs(products) {
 
 function getSpecPriority(spec) {
     const priorityOrder = {
-        'processor': 1,
-        'display': 2,
-        'memory': 3,
-        'storage': 4,
-        'battery': 5,
-        'camera': 6,
-        'weight': 7,
-        'dimensions': 8
+        'ingredient': 1,
+        'material': 2,
+        'size': 3,
+        'weight': 4,
+        'capacity': 5,
+        'feature': 6,
+        'specification': 7
     };
     
     const lowerSpec = spec.toLowerCase();
@@ -456,36 +472,6 @@ function extractPrice(priceStr) {
     return match ? parseFloat(match[1].replace(',', '')) : null;
 }
 
-function getPerformanceScore(product) {
-    // Simple heuristic based on specs
-    let score = product.rating || 3;
-    const specs = product.specs || {};
-    
-    if (specs.Processor && specs.Processor.toLowerCase().includes('i7') || specs.Processor?.includes('Ryzen 7')) score += 2;
-    if (specs.Processor && specs.Processor.toLowerCase().includes('i9') || specs.Processor?.includes('Ryzen 9')) score += 3;
-    if (specs.RAM && parseInt(specs.RAM) >= 16) score += 1;
-    
-    return score;
-}
-
-function getBatteryScore(product) {
-    let score = 5; // Default
-    const specs = product.specs || {};
-    
-    if (specs.Battery) {
-        const batteryMatch = specs.Battery.match(/(\d+)\s*mAh/);
-        if (batteryMatch) {
-            const mAh = parseInt(batteryMatch[1]);
-            if (mAh >= 5000) score = 9;
-            else if (mAh >= 4000) score = 7;
-            else if (mAh >= 3000) score = 5;
-            else score = 3;
-        }
-    }
-    
-    return score;
-}
-
 function rateSpecValue(value) {
     if (!value) return 0;
     
@@ -493,7 +479,7 @@ function rateSpecValue(value) {
     const numMatch = value.match(/(\d+[,.]?\d*)/);
     if (numMatch) {
         const num = parseFloat(numMatch[1].replace(',', ''));
-        if (num > 1000) return 9; // High numbers (storage, resolution)
+        if (num > 1000) return 9; // High numbers
         if (num > 100) return 7;  // Medium numbers
         return 5;                 // Low numbers
     }
@@ -504,76 +490,6 @@ function rateSpecValue(value) {
     if (value.toLowerCase().includes('average') || value.includes('⭐️⭐️⭐️')) return 6;
     
     return 5;
-}
-
-function calculateUseCaseScore(product, features) {
-    let score = product.rating || 3;
-    const specs = product.specs || {};
-    
-    features.forEach(feature => {
-        const featureScore = getFeatureScore(product, feature);
-        score += featureScore;
-    });
-    
-    return score;
-}
-
-function getFeatureScore(product, feature) {
-    switch (feature.toLowerCase()) {
-        case 'performance':
-            return getPerformanceScore(product) - 5;
-        case 'battery':
-            return getBatteryScore(product) - 5;
-        case 'display':
-            return specsInclude(product.specs, ['4k', 'oled', 'retina']) ? 2 : 0;
-        case 'portability':
-            return isPortable(product) ? 2 : 0;
-        case 'storage':
-            return hasGoodStorage(product) ? 2 : 0;
-        default:
-            return 0;
-    }
-}
-
-function specsInclude(specs, keywords) {
-    if (!specs) return false;
-    const specStr = JSON.stringify(specs).toLowerCase();
-    return keywords.some(keyword => specStr.includes(keyword.toLowerCase()));
-}
-
-function isPortable(product) {
-    const specs = product.specs || {};
-    const weight = getSpecValue(specs, 'weight');
-    if (weight && weight.match(/(\d+\.?\d*)\s*kg/)) {
-        const kg = parseFloat(weight.match(/(\d+\.?\d*)\s*kg/)[1]);
-        return kg < 2.0;
-    }
-    return false;
-}
-
-function hasGoodStorage(product) {
-    const specs = product.specs || {};
-    const storage = getSpecValue(specs, 'storage');
-    if (storage && storage.match(/(\d+)\s*GB/)) {
-        const gb = parseInt(storage.match(/(\d+)\s*GB/)[1]);
-        return gb >= 256;
-    }
-    return false;
-}
-
-function generateDecisionFactors(products) {
-    const factors = [
-        "**Budget:** How much are you willing to spend?",
-        "**Primary Use:** What will you use it for most often?",
-        "**Portability:** How important is weight and size?",
-        "**Battery Life:** Do you need all-day usage?",
-        "**Performance:** Are you a power user or casual user?",
-        "**Display Quality:** How important is screen resolution and quality?",
-        "**Storage Needs:** How much storage space do you require?",
-        "**Brand Preference:** Do you have any brand loyalty or requirements?"
-    ];
-    
-    return factors.map(f => `- ${f}`).join('\n');
 }
 
 function generateSlug(title) {
@@ -621,4 +537,4 @@ async function publishToGitHub({ token, content, title, filename }) {
         path: filePath, 
         siteUrl: `https://reviewindex.pages.dev/comparison/${filename.replace('.md','')}`
     };
-            }
+                               }
