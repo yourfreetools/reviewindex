@@ -171,10 +171,15 @@
             color: var(--primary);
         }
         
+        .specs-container {
+            margin-bottom: 16px;
+        }
+        
         .spec-row {
             display: flex;
             margin-bottom: 12px;
             gap: 12px;
+            align-items: center;
         }
         
         .spec-name, .spec-value {
@@ -218,11 +223,13 @@
             border: none;
             padding: 0;
             margin-left: 8px;
+            background: transparent;
         }
         
         .pros-cons-input:focus {
             box-shadow: none;
             border: none;
+            outline: none;
         }
         
         .remove-btn {
@@ -303,6 +310,17 @@
             margin-top: 8px;
             display: none;
         }
+        
+        small {
+            color: var(--secondary);
+            font-size: 14px;
+        }
+        
+        .help-text {
+            font-size: 14px;
+            color: var(--secondary);
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -356,9 +374,9 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="comparisonYoutubeId">Comparison YouTube Video ID (Optional)</label>
-                    <input type="text" id="comparisonYoutubeId" placeholder="e.g., dQw4w9WgXcQ">
-                    <small>Only the video ID, not the full URL. This will be a side-by-side comparison video.</small>
+                    <label for="comparisonYoutubeUrl">Comparison YouTube Video URL (Optional)</label>
+                    <input type="text" id="comparisonYoutubeUrl" placeholder="https://www.youtube.com/watch?v=abc123">
+                    <small>Full YouTube URL for side-by-side comparison video.</small>
                 </div>
                 
                 <h2>Products to Compare</h2>
@@ -486,14 +504,14 @@
                     </div>
                     
                     <div class="form-group">
-                        <label for="${productId}-youtubeId">Product Review YouTube ID</label>
-                        <input type="text" id="${productId}-youtubeId" class="product-youtubeId" placeholder="e.g., dQw4w9WgXcQ">
-                        <small>Only the video ID, not the full URL. This is for the individual product review.</small>
+                        <label for="${productId}-youtubeUrl">Product Review YouTube URL</label>
+                        <input type="text" id="${productId}-youtubeUrl" class="product-youtubeUrl" placeholder="https://www.youtube.com/watch?v=abc123">
+                        <small>Full YouTube URL for individual product review.</small>
                     </div>
                     
                     <div class="form-group">
                         <label>Specifications</label>
-                        <div id="${productId}-specs">
+                        <div class="specs-container" id="${productId}-specs">
                             <div class="spec-row">
                                 <input type="text" class="spec-name" placeholder="e.g., Processor">
                                 <input type="text" class="spec-value" placeholder="e.g., A17 Pro chip">
@@ -541,8 +559,7 @@
             updateWinnerDropdowns();
             
             // Add event listeners for the new product
-            const newProduct = document.getElementById(productId);
-            setupProductEventListeners(newProduct);
+            setupProductEventListeners(document.getElementById(productId));
         }
         
         function setupProductEventListeners(productElement) {
@@ -558,10 +575,12 @@
                 }
             });
             
-            // Add specification button
+            // Add specification button - FIXED
             const addSpecBtn = productElement.querySelector('.add-spec');
             addSpecBtn.addEventListener('click', function() {
-                const specsContainer = productElement.querySelector('.spec-row').parentElement;
+                const productId = this.getAttribute('data-product');
+                const specsContainer = document.getElementById(`${productId}-specs`);
+                
                 const specRow = document.createElement('div');
                 specRow.className = 'spec-row';
                 specRow.innerHTML = `
@@ -569,32 +588,39 @@
                     <input type="text" class="spec-value" placeholder="e.g., 128GB/256GB/512GB/1TB">
                     <button type="button" class="remove-btn remove-spec">×</button>
                 `;
-                specsContainer.insertBefore(specRow, addSpecBtn);
+                specsContainer.appendChild(specRow);
                 
                 // Add event listener to the new remove button
                 specRow.querySelector('.remove-spec').addEventListener('click', function() {
-                    specRow.remove();
+                    if (specsContainer.querySelectorAll('.spec-row').length > 1) {
+                        specRow.remove();
+                    } else {
+                        alert('You need at least one specification.');
+                    }
                 });
             });
             
-            // Add pros/cons buttons
+            // Add pros/cons buttons - FIXED
             const addProsBtn = productElement.querySelector('.add-pros');
             const addConsBtn = productElement.querySelector('.add-cons');
             
             addProsBtn.addEventListener('click', function() {
-                addProsConsItem(productElement, 'pros');
+                const productId = this.getAttribute('data-product');
+                addProsConsItem(productId, 'pros');
             });
             
             addConsBtn.addEventListener('click', function() {
-                addProsConsItem(productElement, 'cons');
+                const productId = this.getAttribute('data-product');
+                addProsConsItem(productId, 'cons');
             });
             
             // Remove existing specs
             const removeSpecBtns = productElement.querySelectorAll('.remove-spec');
             removeSpecBtns.forEach(btn => {
                 btn.addEventListener('click', function() {
-                    if (productElement.querySelectorAll('.spec-row').length > 1) {
-                        this.parentElement.remove();
+                    const specsContainer = this.closest('.specs-container');
+                    if (specsContainer.querySelectorAll('.spec-row').length > 1) {
+                        this.closest('.spec-row').remove();
                     } else {
                         alert('You need at least one specification.');
                     }
@@ -605,14 +631,13 @@
             const removeProsConsBtns = productElement.querySelectorAll('.remove-pros-cons');
             removeProsConsBtns.forEach(btn => {
                 btn.addEventListener('click', function() {
-                    this.parentElement.remove();
+                    this.closest('.pros-cons-item').remove();
                 });
             });
         }
         
-        function addProsConsItem(productElement, type) {
-            const containerId = `${productElement.id}-${type}`;
-            const container = document.getElementById(containerId);
+        function addProsConsItem(productId, type) {
+            const container = document.getElementById(`${productId}-${type}`);
             const item = document.createElement('div');
             item.className = `pros-cons-item ${type === 'cons' ? 'cons-item' : ''}`;
             item.innerHTML = `
@@ -651,7 +676,7 @@
             });
         }
         
-        // Form submission
+        // Form submission - FIXED
         const comparisonForm = document.getElementById('comparisonForm');
         const successAlert = document.getElementById('successAlert');
         const errorAlert = document.getElementById('errorAlert');
@@ -664,7 +689,7 @@
             const description = document.getElementById('description').value;
             const filename = document.getElementById('filename').value;
             const categories = document.getElementById('categories').value;
-            const comparisonYoutubeId = document.getElementById('comparisonYoutubeId').value;
+            const comparisonYoutubeUrl = document.getElementById('comparisonYoutubeUrl').value;
             const overallWinnerValue = document.getElementById('overallWinner').value;
             const budgetWinnerValue = document.getElementById('budgetWinner').value;
             const performanceWinnerValue = document.getElementById('performanceWinner').value;
@@ -674,6 +699,15 @@
                 alert('Filename can only contain letters, numbers, and hyphens.');
                 return;
             }
+            
+            // Extract YouTube ID from URL
+            function extractYouTubeId(url) {
+                if (!url) return null;
+                const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+                return match ? match[1] : null;
+            }
+            
+            const comparisonYoutubeId = extractYouTubeId(comparisonYoutubeUrl);
             
             // Get products data
             const products = [];
@@ -686,6 +720,9 @@
                     return;
                 }
                 
+                const youtubeUrl = section.querySelector('.product-youtubeUrl').value;
+                const youtubeId = extractYouTubeId(youtubeUrl);
+                
                 const product = {
                     name: name,
                     image: section.querySelector('.product-image').value,
@@ -694,7 +731,7 @@
                     rating: section.querySelector('.product-rating').value,
                     bestFor: section.querySelector('.product-bestFor').value,
                     affiliateLink: section.querySelector('.product-affiliateLink').value,
-                    youtubeId: section.querySelector('.product-youtubeId').value,
+                    youtubeId: youtubeId,
                     specs: {},
                     pros: [],
                     cons: []
@@ -711,7 +748,7 @@
                 });
                 
                 // Get pros
-                const prosInputs = section.querySelectorAll('#${section.id}-pros .pros-cons-input');
+                const prosInputs = section.querySelectorAll(`#${section.id}-pros .pros-cons-input`);
                 prosInputs.forEach(input => {
                     if (input.value) {
                         product.pros.push(input.value);
@@ -719,7 +756,7 @@
                 });
                 
                 // Get cons
-                const consInputs = section.querySelectorAll('#${section.id}-cons .pros-cons-input');
+                const consInputs = section.querySelectorAll(`#${section.id}-cons .pros-cons-input`);
                 consInputs.forEach(input => {
                     if (input.value) {
                         product.cons.push(input.value);
@@ -742,6 +779,8 @@
                 performanceWinner: performanceWinnerValue
             };
             
+            console.log('Submitting data:', formData);
+            
             // Show loading state
             const submitBtn = document.getElementById('submitBtn');
             submitBtn.textContent = 'Creating...';
@@ -753,6 +792,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                    'Authorization': 'Bearer your-token-here' // Add if needed
                     },
                     body: JSON.stringify(formData)
                 });
@@ -770,12 +810,16 @@
                     addProduct();
                     
                     // Show success message with link
-                    successAlert.innerHTML = `
-                        Comparison created successfully! 
-                        <br><a href="${result.data.siteUrl}" target="_blank">View your comparison page</a>
-                    `;
+                    if (result.data && result.data.siteUrl) {
+                        successAlert.innerHTML = `
+                            Comparison created successfully! 
+                            <br><a href="${result.data.siteUrl}" target="_blank">View your comparison page</a>
+                        `;
+                    } else {
+                        successAlert.innerHTML = 'Comparison created successfully!';
+                    }
                 } else {
-                    throw new Error(result.message);
+                    throw new Error(result.message || 'Unknown error occurred');
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -802,4 +846,4 @@
         });
     </script>
 </body>
-  </html>
+                    </html>
