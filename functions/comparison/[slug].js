@@ -1,6 +1,4 @@
 // functions/comparison/[...slug].js
-import { HTMLRewriter } from './html-rewriter';
-
 const CACHE_TTL = 15552000; // 6 months
 const GITHUB_CONFIG = {
   owner: 'yourfreetools',
@@ -18,15 +16,6 @@ export async function onRequest({ request, params, env }) {
       return Response.redirect(`${new URL(request.url).origin}/comparison/${cleanSlug}`, 301);
     }
 
-    // Check cache first
-    const cacheKey = `comparison:${slug}`;
-    const cached = await env.KV.get(cacheKey, 'json');
-    if (cached) {
-      return new Response(cached.html, {
-        headers: getResponseHeaders(cached.metadata)
-      });
-    }
-
     // Fetch and process content
     const content = await fetchMarkdownContent(slug, env.GITHUB_TOKEN);
     if (!content) return render404();
@@ -38,16 +27,14 @@ export async function onRequest({ request, params, env }) {
     const related = await fetchRelatedComparisons(slug, frontmatter.categories, env.GITHUB_TOKEN);
     const html = await renderComparisonPage({ frontmatter, markdown, slug, products, winners, related });
 
-    // Cache the response
-    const metadata = { 
-      contentType: 'text/html; charset=utf-8',
-      cacheControl: `public, max-age=${CACHE_TTL}`,
-      lastModified: new Date().toUTCString()
-    };
-    
-    await env.KV.put(cacheKey, JSON.stringify({ html, metadata }), { expirationTtl: CACHE_TTL });
-
-    return new Response(html, { headers: getResponseHeaders(metadata) });
+    return new Response(html, {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': `public, max-age=${CACHE_TTL}`,
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY'
+      }
+    });
 
   } catch (error) {
     console.error('Comparison render error:', error);
@@ -63,8 +50,7 @@ async function fetchMarkdownContent(slug, token) {
       'Authorization': `Bearer ${token}`,
       'Accept': 'application/vnd.github.v3.raw',
       'User-Agent': 'ReviewIndex/1.0'
-    },
-    cf: { cacheTtl: 300 } // Cache API responses for 5 minutes
+    }
   });
 
   return response.ok ? response.text() : null;
@@ -114,7 +100,6 @@ async function fetchRelatedComparisons(currentSlug, categories, token) {
           });
         }
       } catch {
-        // Skip invalid files
         continue;
       }
     }
@@ -140,12 +125,9 @@ function parseFrontmatter(content) {
 
       let value = valueParts.join(':').trim();
       
-      // Handle array values
       if (value.startsWith('[') && value.endsWith(']')) {
         value = value.slice(1, -1).split(',').map(v => v.trim().replace(/^["']|["']$/g, ''));
-      } 
-      // Handle string values
-      else if (value.startsWith('"') && value.endsWith('"') || value.startsWith("'") && value.endsWith("'")) {
+      } else if (value.startsWith('"') && value.endsWith('"') || value.startsWith("'") && value.endsWith("'")) {
         value = value.slice(1, -1);
       }
 
@@ -195,8 +177,7 @@ async function renderComparisonPage({ frontmatter, markdown, slug, products, win
   const schema = generateStructuredData({ frontmatter, slug, products, winners });
   const htmlContent = await processMarkdown(markdown);
 
-  return `
-<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en" itemscope itemtype="https://schema.org/Product">
 <head>
   ${renderMetaTags({ title, description, frontmatter, canonicalUrl, products })}
@@ -587,7 +568,6 @@ function renderFooter(date) {
 function renderScripts() {
   return `
   <script>
-    // Performance optimizations
     document.addEventListener('DOMContentLoaded', () => {
       // Lazy load images
       const images = document.querySelectorAll('img[loading="lazy"]');
@@ -606,7 +586,6 @@ function renderScripts() {
       // Affiliate link tracking
       document.querySelectorAll('a[rel*="sponsored"]').forEach(link => {
         link.addEventListener('click', (e) => {
-          // Analytics tracking would go here
           console.log('Affiliate click:', e.target.href);
         });
       });
@@ -615,7 +594,6 @@ function renderScripts() {
 }
 
 async function processMarkdown(markdown) {
-  // Use HTMLRewriter for efficient markdown processing
   let html = markdown;
   
   // Convert basic markdown syntax
@@ -643,7 +621,10 @@ function generateStructuredData({ frontmatter, slug, products, winners }) {
     "name": frontmatter.title,
     "description": frontmatter.description,
     "image": frontmatter.featured_image ? [frontmatter.featured_image] : [],
-    "brand": products.map(name => ({ "@type": "Brand", "name" })),
+    "brand": {
+      "@type": "Brand",
+      "name": "Multiple"
+    },
     "offers": {
       "@type": "AggregateOffer",
       "offerCount": products.length,
@@ -666,25 +647,17 @@ function generateDescription(products) {
   return `Comprehensive comparison of ${products.join(' vs ')}. Detailed analysis of features, specifications, prices, and performance to help you make the best choice.`;
 }
 
-function getResponseHeaders(metadata) {
-  const headers = new Headers({
-    'Content-Type': metadata.contentType,
-    'Cache-Control': metadata.cacheControl,
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY'
-  });
-
-  if (metadata.lastModified) {
-    headers.set('Last-Modified', metadata.lastModified);
-  }
-
-  return headers;
-}
-
 function escapeHtml(unsafe) {
-  return unsafe?.replace(/[&<>"']/g, 
-    match => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[match])
-  ) || '';
+  if (!unsafe) return '';
+  return unsafe.replace(/[&<>"']/g, 
+    match => ({
+      '&': '&amp;',
+      '<': '&lt;', 
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[match])
+  );
 }
 
 function render404() {
@@ -717,4 +690,4 @@ function errorTemplate() {
   <p>An error occurred while loading the comparison.</p>
   <a href="/">Return Home</a>
 </body></html>`;
-}
+          }
