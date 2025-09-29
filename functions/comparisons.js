@@ -7,35 +7,37 @@ export async function onRequest(context) {
         const url = new URL(request.url);
         const searchQuery = url.searchParams.get('search') || '';
         
-        // Fetch only comparison file names (lightweight API call)
-        const comparisonList = await fetchComparisonList(env.GITHUB_TOKEN);
+        // Fetch comparison data with caching
+        const comparisonData = await fetchComparisonData(env.GITHUB_TOKEN);
         
-        if (!comparisonList || comparisonList.length === 0) {
+        if (!comparisonData || comparisonData.length === 0) {
             return renderErrorPage('No comparisons found', 'There are no product comparisons available at the moment.');
         }
 
-        // Filter comparisons based on search (client-side, no extra API calls)
+        // Get latest 6 comparisons with full data for featured section
+        const latestComparisons = comparisonData
+            .sort((a, b) => new Date(b.date) - new Date(a.date))
+            .slice(0, 6);
+
+        // Filter comparisons based on search
         let searchResults = [];
         let showingResults = false;
         
         if (searchQuery.trim()) {
-            searchResults = filterComparisonsBySearch(comparisonList, searchQuery);
+            searchResults = filterComparisonsBySearch(comparisonData, searchQuery);
             showingResults = true;
         }
-
-        // Get search suggestions based on all available comparisons
-        const searchSuggestions = generateSearchSuggestions(comparisonList);
 
         // Render the comparisons listing page
         const htmlContent = renderComparisonsPage(
             searchResults,
-            comparisonList.slice(0, 6), // Show first 6 as "featured"
-            searchSuggestions,
+            latestComparisons,
+            comparisonData, // Pass all data for client-side search
             {
                 searchQuery,
                 showingResults,
                 totalResults: searchResults.length,
-                totalComparisons: comparisonList.length
+                totalComparisons: comparisonData.length
             },
             request.url
         );
@@ -55,10 +57,10 @@ export async function onRequest(context) {
     }
 }
 
-async function fetchComparisonList(githubToken) {
+async function fetchComparisonData(githubToken) {
     const REPO_OWNER = 'yourfreetools';
     const REPO_NAME = 'reviewindex';
-    const CACHE_KEY = 'comparisons-list';
+    const CACHE_KEY = 'comparisons-full-data';
     
     try {
         // Try to get from cache first
@@ -70,14 +72,13 @@ async function fetchComparisonList(githubToken) {
             return await cachedResponse.json();
         }
         
-        // Fetch only the file list (lightweight API call)
+        // Fetch file list first
         const response = await fetch(
             `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/content/comparisons`,
             {
                 headers: {
                     'Authorization': `token ${githubToken}`,
-                    'User-Agent': 'Review-Index-App',
-                    'Accept': 'application/vnd.github.v3+json'
+                    'User-Agent': 'Review-Index-App'
                 }
             }
         );
@@ -86,23 +87,42 @@ async function fetchComparisonList(githubToken) {
             const files = await response.json();
             const comparisons = [];
             
-            // Process only file names - no content downloading
+            // Process each comparison file to get full data
             for (const file of files) {
                 if (file.name.endsWith('.md')) {
-                    const slug = file.name.replace('.md', '');
-                    const title = formatSlugToTitle(slug);
-                    
-                    // Extract products from slug for better search
-                    const products = extractProductsFromSlug(slug);
-                    
-                    comparisons.push({
-                        slug: slug,
-                        title: title,
-                        products: products,
-                        categories: ['comparisons'], // Default category
-                        date: file.last_modified || new Date().toISOString(),
-                        // No description or image to avoid API calls
-                    });
+                    try {
+                        const fileResponse = await fetch(file.download_url);
+                        if (fileResponse.status === 200) {
+                            const content = await fileResponse.text();
+                            const { frontmatter } = parseComparisonMarkdown(content);
+                            
+                            comparisons.push({
+                                slug: file.name.replace('.md', ''),
+                                title: frontmatter.title || formatSlugToTitle(file.name.replace('.md', '')),
+                                description: frontmatter.description || `Compare ${frontmatter.comparison_products?.join(' vs ') || 'products'}`,
+                                categories: Array.isArray(frontmatter.categories) ? frontmatter.categories : 
+                                          (frontmatter.categories ? [frontmatter.categories] : ['comparisons']),
+                                products: frontmatter.comparison_products || extractProductsFromSlug(file.name.replace('.md', '')),
+                                featured_image: frontmatter.featured_image || getDefaultImage(frontmatter.comparison_products),
+                                date: frontmatter.date || file.last_modified || new Date().toISOString(),
+                                last_modified: file.last_modified || new Date().toISOString()
+                            });
+                        }
+                    } catch (error) {
+                        console.error(`Error processing comparison ${file.name}:`, error);
+                        // Still create basic entry even if content fetch fails
+                        const slug = file.name.replace('.md', '');
+                        comparisons.push({
+                            slug: slug,
+                            title: formatSlugToTitle(slug),
+                            description: `Product comparison: ${formatSlugToTitle(slug)}`,
+                            categories: ['comparisons'],
+                            products: extractProductsFromSlug(slug),
+                            featured_image: getDefaultImage(extractProductsFromSlug(slug)),
+                            date: file.last_modified || new Date().toISOString(),
+                            last_modified: file.last_modified || new Date().toISOString()
+                        });
+                    }
                 }
             }
             
@@ -120,7 +140,7 @@ async function fetchComparisonList(githubToken) {
         }
         return [];
     } catch (error) {
-        console.error('Error fetching comparison list:', error);
+        console.error('Error fetching comparison data:', error);
         return [];
     }
 }
@@ -144,47 +164,75 @@ function filterComparisonsBySearch(comparisons, searchQuery) {
         // Search in title
         if (comp.title.toLowerCase().includes(query)) return true;
         
+        // Search in description
+        if (comp.description.toLowerCase().includes(query)) return true;
+        
         // Search in product names
         if (comp.products.some(product => product.toLowerCase().includes(query))) return true;
+        
+        // Search in categories
+        if (comp.categories.some(category => category.toLowerCase().includes(query))) return true;
         
         return false;
     }).slice(0, 20); // Limit results for performance
 }
 
-function generateSearchSuggestions(comparisons) {
-    const suggestions = new Set();
-    
-    // Extract popular product names and categories
-    comparisons.forEach(comp => {
-        comp.products.forEach(product => {
-            // Add individual product suggestions
-            const words = product.split(' ');
-            if (words.length > 0) {
-                suggestions.add(words[0]); // Brand name
-            }
-            suggestions.add(product);
-        });
-        
-        // Add comparison suggestions
-        if (comp.products.length >= 2) {
-            suggestions.add(`${comp.products[0]} vs ${comp.products[1]}`);
-        }
-    });
-    
-    // Add common comparison types
-    suggestions.add('iPhone vs Samsung');
-    suggestions.add('MacBook vs Windows');
-    suggestions.add('Gaming Headphones');
-    suggestions.add('Smartphone Camera');
-    suggestions.add('Laptop Battery Life');
-    suggestions.add('Budget Phones');
-    
-    return Array.from(suggestions).slice(0, 15); // Limit to 15 suggestions
+function getDefaultImage(products) {
+    // Generate a placeholder image based on product names
+    if (products && products.length > 0) {
+        const productNames = products.join('+vs+');
+        return `https://via.placeholder.com/400x200/3B82F6/FFFFFF?text=${encodeURIComponent(productNames)}`;
+    }
+    return 'https://via.placeholder.com/400x200/3B82F6/FFFFFF?text=Product+Comparison';
 }
 
-function renderComparisonsPage(searchResults, featuredComparisons, searchSuggestions, filters, requestUrl) {
+function parseComparisonMarkdown(content) {
+    const frontmatter = {};
+    let markdownContent = content;
+    
+    if (content.startsWith('---')) {
+        const end = content.indexOf('---', 3);
+        if (end !== -1) {
+            const yaml = content.substring(3, end).trim();
+            markdownContent = content.substring(end + 3).trim();
+            
+            yaml.split('\n').forEach(line => {
+                const colon = line.indexOf(':');
+                if (colon > 0) {
+                    const key = line.substring(0, colon).trim();
+                    let value = line.substring(colon + 1).trim();
+                    
+                    if (value.startsWith('"') && value.endsWith('"')) {
+                        value = value.substring(1, value.length - 1);
+                    } else if (value.startsWith("'") && value.endsWith("'")) {
+                        value = value.substring(1, value.length - 1);
+                    } else if (value.startsWith('[') && value.endsWith(']')) {
+                        value = value.substring(1, value.length - 1).split(',').map(item => item.trim().replace(/"/g, ''));
+                    }
+                    
+                    frontmatter[key] = value;
+                }
+            });
+        }
+    }
+    
+    return { frontmatter, content: markdownContent };
+}
+
+function renderComparisonsPage(searchResults, latestComparisons, allComparisons, filters, requestUrl) {
     const canonicalUrl = `https://reviewindex.pages.dev/comparisons`;
     const searchTitle = filters.searchQuery ? `Search Results for "${filters.searchQuery}"` : 'Product Comparisons';
+    
+    // Generate dynamic meta description
+    const metaDescription = filters.searchQuery 
+        ? `Search results for "${filters.searchQuery}" - Find detailed product comparisons and buying guides.`
+        : `Browse ${filters.totalComparisons} detailed product comparisons. Compare specs, prices, features and make informed buying decisions.`;
+    
+    // Extract all product names for search suggestions
+    const allProducts = new Set();
+    allComparisons.forEach(comp => {
+        comp.products.forEach(product => allProducts.add(product));
+    });
     
     return `
 <!DOCTYPE html>
@@ -193,26 +241,62 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${escapeHtml(searchTitle)} - Find Product Comparisons | ReviewIndex</title>
-    <meta name="description" content="Search and find detailed product comparisons. Compare specs, prices, features and make informed buying decisions.">
+    <meta name="description" content="${escapeHtml(metaDescription)}">
     <link rel="canonical" href="${canonicalUrl}">
     
     <!-- SEO Meta Tags -->
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
-    <meta name="keywords" content="product comparisons, compare products, buying guide, vs, review comparison">
+    <meta name="keywords" content="product comparisons, compare products, buying guide, vs, review comparison, ${Array.from(allProducts).slice(0, 10).join(', ')}">
     
     <!-- Open Graph -->
     <meta property="og:title" content="${escapeHtml(searchTitle)} - ReviewIndex">
-    <meta property="og:description" content="Search and find detailed product comparisons. Compare specs, prices, features and make informed buying decisions.">
+    <meta property="og:description" content="${escapeHtml(metaDescription)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${canonicalUrl}">
-    <meta property="og:image" content="https://reviewindex.pages.dev/images/comparisons-og.jpg">
+    <meta property="og:image" content="${latestComparisons[0]?.featured_image || 'https://reviewindex.pages.dev/images/comparisons-og.jpg'}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
     <meta property="og:site_name" content="ReviewIndex">
     
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${escapeHtml(searchTitle)} - ReviewIndex">
-    <meta name="twitter:description" content="Search and find detailed product comparisons. Compare specs, prices, features and make informed buying decisions.">
-    <meta name="twitter:image" content="https://reviewindex.pages.dev/images/comparisons-og.jpg">
+    <meta name="twitter:description" content="${escapeHtml(metaDescription)}">
+    <meta name="twitter:image" content="${latestComparisons[0]?.featured_image || 'https://reviewindex.pages.dev/images/comparisons-og.jpg'}">
+    
+    <!-- Schema.org JSON-LD -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "name": "Product Comparisons",
+        "description": "${escapeHtml(metaDescription)}",
+        "url": "${canonicalUrl}",
+        "mainEntity": {
+            "@type": "ItemList",
+            "numberOfItems": ${filters.totalComparisons},
+            "itemListElement": [
+                ${latestComparisons.map((comp, index) => `
+                {
+                    "@type": "ListItem",
+                    "position": ${index + 1},
+                    "item": {
+                        "@type": "Article",
+                        "headline": "${escapeHtml(comp.title)}",
+                        "description": "${escapeHtml(comp.description)}",
+                        "image": "${escapeHtml(comp.featured_image)}",
+                        "url": "https://reviewindex.pages.dev/comparison/${comp.slug}",
+                        "datePublished": "${comp.date}",
+                        "author": {
+                            "@type": "Organization",
+                            "name": "ReviewIndex"
+                        }
+                    }
+                }`).join(',')}
+            ]
+        }
+    }
+    </script>
     
     <style>
         :root {
@@ -282,11 +366,13 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
             box-shadow: var(--shadow);
             margin: 2rem 0;
             border: 1px solid var(--border);
+            position: relative;
         }
         
         .search-form {
             max-width: 600px;
             margin: 0 auto;
+            position: relative;
         }
         
         .search-input-group {
@@ -328,27 +414,33 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
         }
         
         .search-suggestions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            justify-content: center;
-            margin-top: 1.5rem;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
         }
         
-        .suggestion-chip {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 0.9rem;
+        .suggestion-item {
+            padding: 1rem 1.5rem;
             cursor: pointer;
-            transition: all 0.3s ease;
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-bottom: 1px solid var(--border);
+            transition: background-color 0.2s ease;
         }
         
-        .suggestion-chip:hover {
-            background: rgba(255, 255, 255, 0.3);
-            transform: translateY(-2px);
+        .suggestion-item:hover {
+            background: var(--light);
+        }
+        
+        .suggestion-item:last-child {
+            border-bottom: none;
         }
         
         /* Results Section */
@@ -398,7 +490,7 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
         .comparison-card {
             background: white;
             border-radius: 16px;
-            padding: 2rem;
+            overflow: hidden;
             box-shadow: var(--shadow);
             border: 1px solid var(--border);
             transition: all 0.3s ease;
@@ -412,12 +504,29 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
         }
         
+        .card-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: var(--light);
+        }
+        
+        .card-content {
+            padding: 1.5rem;
+        }
+        
         .card-title {
             font-size: 1.3rem;
             font-weight: 700;
             color: var(--dark);
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
             line-height: 1.4;
+        }
+        
+        .card-description {
+            color: #64748b;
+            margin-bottom: 1rem;
+            line-height: 1.5;
         }
         
         .card-products {
@@ -431,16 +540,16 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
         .product-badge {
             background: var(--primary);
             color: white;
-            padding: 0.5rem 1rem;
+            padding: 0.3rem 0.8rem;
             border-radius: 20px;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             font-weight: 500;
         }
         
         .vs-text {
             color: #94a3b8;
             font-weight: 600;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
         }
         
         .card-meta {
@@ -507,10 +616,6 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
                 flex-direction: column;
                 align-items: flex-start;
             }
-            
-            .search-suggestions {
-                justify-content: flex-start;
-            }
         }
     </style>
 </head>
@@ -533,21 +638,14 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
                             value="${escapeHtml(filters.searchQuery)}"
                             aria-label="Search product comparisons"
                             id="searchInput"
+                            autocomplete="off"
                         >
                         <button type="submit" class="search-btn">Search</button>
                     </div>
                 </form>
-                
-                <!-- Search Suggestions -->
-                ${searchSuggestions.length > 0 ? `
-                <div class="search-suggestions">
-                    ${searchSuggestions.map(suggestion => `
-                        <div class="suggestion-chip" onclick="setSearchQuery('${escapeHtml(suggestion)}')">
-                            ${escapeHtml(suggestion)}
-                        </div>
-                    `).join('')}
+                <div class="search-suggestions" id="searchSuggestions">
+                    <!-- Dynamic suggestions will appear here -->
                 </div>
-                ` : ''}
             </div>
         </header>
         
@@ -563,17 +661,22 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
             <div class="comparisons-grid">
                 ${searchResults.map(comp => `
                     <a href="/comparison/${comp.slug}" class="comparison-card" aria-label="View comparison: ${escapeHtml(comp.title)}">
-                        <h3 class="card-title">${escapeHtml(comp.title)}</h3>
-                        ${comp.products.length > 0 ? `
-                        <div class="card-products">
-                            ${comp.products.map((product, index) => `
-                                <span class="product-badge">${escapeHtml(product)}</span>
-                                ${index < comp.products.length - 1 ? '<span class="vs-text">vs</span>' : ''}
-                            `).join('')}
-                        </div>
-                        ` : ''}
-                        <div class="card-meta">
-                            <span>Click to view detailed comparison</span>
+                        <img src="${escapeHtml(comp.featured_image)}" alt="${escapeHtml(comp.title)}" class="card-image" loading="lazy">
+                        <div class="card-content">
+                            <h3 class="card-title">${escapeHtml(comp.title)}</h3>
+                            <p class="card-description">${escapeHtml(comp.description)}</p>
+                            ${comp.products.length > 0 ? `
+                            <div class="card-products">
+                                ${comp.products.map((product, index) => `
+                                    <span class="product-badge">${escapeHtml(product)}</span>
+                                    ${index < comp.products.length - 1 ? '<span class="vs-text">vs</span>' : ''}
+                                `).join('')}
+                            </div>
+                            ` : ''}
+                            <div class="card-meta">
+                                <span>${formatDate(comp.date)}</span>
+                                <span>${comp.categories[0] || 'Comparison'}</span>
+                            </div>
                         </div>
                     </a>
                 `).join('')}
@@ -581,33 +684,38 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
             ` : `
             <div class="no-results">
                 <h3>No comparisons found for "${escapeHtml(filters.searchQuery)}"</h3>
-                <p>Try searching with different keywords or check the suggestions above.</p>
+                <p>Try searching with different keywords or browse our latest comparisons below.</p>
             </div>
             `}
         </div>
         ` : ''}
         
-        <!-- Featured Comparisons -->
+        <!-- Featured Comparisons (Latest 6) -->
         <section class="featured-section" aria-labelledby="featured-title">
-            <h2 class="section-title" id="featured-title">📈 Available Comparisons</h2>
+            <h2 class="section-title" id="featured-title">📈 Latest Comparisons</h2>
             <p style="text-align: center; color: #64748b; margin-bottom: 2rem;">
-                Browse our collection of ${filters.totalComparisons} product comparisons
+                Recently added product comparisons and buying guides
             </p>
             
             <div class="comparisons-grid">
-                ${featuredComparisons.map(comp => `
+                ${latestComparisons.map(comp => `
                     <a href="/comparison/${comp.slug}" class="comparison-card" aria-label="View comparison: ${escapeHtml(comp.title)}">
-                        <h3 class="card-title">${escapeHtml(comp.title)}</h3>
-                        ${comp.products.length > 0 ? `
-                        <div class="card-products">
-                            ${comp.products.map((product, index) => `
-                                <span class="product-badge">${escapeHtml(product)}</span>
-                                ${index < comp.products.length - 1 ? '<span class="vs-text">vs</span>' : ''}
-                            `).join('')}
-                        </div>
-                        ` : ''}
-                        <div class="card-meta">
-                            <span>Click to view detailed comparison</span>
+                        <img src="${escapeHtml(comp.featured_image)}" alt="${escapeHtml(comp.title)}" class="card-image" loading="lazy">
+                        <div class="card-content">
+                            <h3 class="card-title">${escapeHtml(comp.title)}</h3>
+                            <p class="card-description">${escapeHtml(comp.description)}</p>
+                            ${comp.products.length > 0 ? `
+                            <div class="card-products">
+                                ${comp.products.map((product, index) => `
+                                    <span class="product-badge">${escapeHtml(product)}</span>
+                                    ${index < comp.products.length - 1 ? '<span class="vs-text">vs</span>' : ''}
+                                `).join('')}
+                            </div>
+                            ` : ''}
+                            <div class="card-meta">
+                                <span>${formatDate(comp.date)}</span>
+                                <span>${comp.categories[0] || 'Comparison'}</span>
+                            </div>
                         </div>
                     </a>
                 `).join('')}
@@ -615,20 +723,19 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
         </section>
         
         <footer class="footer" role="contentinfo">
-            <p>© ${new Date().getFullYear()} ReviewIndex. All comparisons are independently researched.</p>
+            <p>© ${new Date().getFullYear()} ReviewIndex. All comparisons are independently researched and regularly updated.</p>
             <p>Total comparisons available: ${filters.totalComparisons}</p>
         </footer>
     </div>
     
     <script>
-        // Enhanced search functionality
-        function setSearchQuery(query) {
-            document.getElementById('searchInput').value = query;
-            document.querySelector('form[role="search"]').submit();
-        }
+        // All comparisons data for client-side search
+        const allComparisons = ${JSON.stringify(allComparisons)};
         
+        // Enhanced search functionality
         document.addEventListener('DOMContentLoaded', function() {
             const searchInput = document.getElementById('searchInput');
+            const searchSuggestions = document.getElementById('searchSuggestions');
             const searchForm = document.querySelector('form[role="search"]');
             
             // Focus search input on page load
@@ -636,16 +743,47 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
                 searchInput.focus();
             }
             
-            // Add real-time search suggestions (client-side)
-            if (searchInput) {
-                let searchTimeout;
+            // Real-time search suggestions
+            if (searchInput && searchSuggestions) {
                 searchInput.addEventListener('input', function() {
-                    clearTimeout(searchTimeout);
-                    // Could add client-side filtering here if needed
+                    const query = this.value.trim().toLowerCase();
+                    
+                    if (query.length < 2) {
+                        searchSuggestions.style.display = 'none';
+                        return;
+                    }
+                    
+                    // Filter comparisons for suggestions
+                    const suggestions = allComparisons.filter(comp => {
+                        return comp.title.toLowerCase().includes(query) ||
+                               comp.products.some(product => product.toLowerCase().includes(query)) ||
+                               comp.description.toLowerCase().includes(query);
+                    }).slice(0, 8); // Limit to 8 suggestions
+                    
+                    if (suggestions.length > 0) {
+                        searchSuggestions.innerHTML = suggestions.map(comp => `
+                            <div class="suggestion-item" onclick="selectSuggestion('${escapeJs(comp.title)}')">
+                                <strong>${escapeJs(comp.title)}</strong>
+                                <div style="font-size: 0.9rem; color: #666; margin-top: 0.25rem;">
+                                    ${comp.products.join(' vs ')}
+                                </div>
+                            </div>
+                        `).join('');
+                        searchSuggestions.style.display = 'block';
+                    } else {
+                        searchSuggestions.style.display = 'none';
+                    }
+                });
+                
+                // Hide suggestions when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!searchInput.contains(e.target) && !searchSuggestions.contains(e.target)) {
+                        searchSuggestions.style.display = 'none';
+                    }
                 });
             }
             
-            // Handle empty search
+            // Handle form submission
             if (searchForm) {
                 searchForm.addEventListener('submit', function(e) {
                     const searchValue = searchInput.value.trim();
@@ -656,6 +794,21 @@ function renderComparisonsPage(searchResults, featuredComparisons, searchSuggest
                 });
             }
         });
+        
+        function selectSuggestion(query) {
+            document.getElementById('searchInput').value = query;
+            document.getElementById('searchSuggestions').style.display = 'none';
+            document.querySelector('form[role="search"]').submit();
+        }
+        
+        function escapeJs(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
     </script>
 </body>
 </html>`;
@@ -667,6 +820,15 @@ function formatSlugToTitle(slug) {
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ')
         .replace(/ Vs /gi, ' vs ');
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+    });
 }
 
 function escapeHtml(unsafe) {
@@ -747,4 +909,4 @@ function renderErrorPage(title, message) {
             'Cache-Control': 'no-cache, no-store, must-revalidate'
         }
     });
-}
+    }
