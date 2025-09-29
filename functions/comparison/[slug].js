@@ -807,7 +807,7 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
                 padding: 0.875rem 1.5rem;
                 font-size: 1rem;
             }
-        }
+        
         
         @media (max-width: 480px) {
             .related-products {
@@ -819,11 +819,28 @@ async function renderComparisonPage(markdownContent, slug, requestUrl, relatedCo
             .related-vs {
                 display: none;
             }
-            
-            .product-image {
-                width: 150px;
-                height: 150px;
-            }
+            @media (max-width: 480px) 
+    .product-image {
+        max-width: 80%;
+        height: auto;
+        max-height: 200px;
+    }
+    
+    /* FIX FOR EMPTY SPECIFICATIONS SPACING - ADD THIS */
+.product-info-section:empty {
+    display: none;
+}
+
+/* Reduce padding for specs sections to minimize space */
+.product-info-section:has(.specs-table) {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+}
+
+/* Ensure specs tables are compact */
+.specs-table {
+    margin: 0.5rem 0;
+}
         }
     </style>
 </head>
