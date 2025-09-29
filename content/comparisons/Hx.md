@@ -36,7 +36,7 @@ Comprehensive comparison between Samsung Galaxy S24 and Google Pixel 9 covering 
 **Best For:** Power users, Android enthusiasts, gaming and multimedia consumption  
 **Overall Rating:** ⭐⭐⭐⭐⭐ (4.8/5)
 
-[**Check Current Price & Offers**](https://amazon.com/product-link-samsung){: .btn .btn-primary}
+[**Check Current Price & Offers**](https://amazon.com/product-link-samsung)
 
 #### Key Features & Specifications
 - **Processor:** Snapdragon 8 Gen 3
@@ -44,8 +44,7 @@ Comprehensive comparison between Samsung Galaxy S24 and Google Pixel 9 covering 
 - **RAM:** 12GB
 - **Storage:** 256GB
 - **Battery:** 5000mAh, fast charging support
-- **Cameras:** Rear quad-camera setup with 200MP main sensor, front 12MP
-
+- **Cameras:** Rear quad-camera setup with 200MP main sensor, front 128GB
 #### Pros
 ✅ Excellent performance for multitasking and gaming
 ✅ High-quality display with smooth refresh rate
@@ -74,9 +73,9 @@ Comprehensive comparison between Samsung Galaxy S24 and Google Pixel 9 covering 
 **Best For:** Photography enthusiasts, clean Android experience, daily productivity  
 **Overall Rating:** ⭐⭐⭐⭐⭐ (4.6/5)
 
-[**Check Current Price & Offers**](https://amazon.com/product-link-pixel){: .btn .btn-primary}
+[**Check Current Price & Offers**](https://amazon.com/product-link-pixel)
 
-#### Key Features & Specifications
+## Key Features & Specifications
 - **Processor:** Google Tensor G4
 - **Display:** 6.3" OLED, 120Hz refresh rate
 - **RAM:** 8GB
@@ -84,20 +83,20 @@ Comprehensive comparison between Samsung Galaxy S24 and Google Pixel 9 covering 
 - **Battery:** 4500mAh, moderate fast charging
 - **Cameras:** Rear triple-camera with 50MP main sensor, front 12MP
 
-#### Pros
+## Pros
 ✅ Exceptional camera performance, especially in low light
 ✅ Smooth and clean Android interface
 ✅ Compact and comfortable to hold
 ✅ Regular software updates and security patches
 ✅ Affordable relative to features
 
-#### Cons
+## Cons
 ❌ Less powerful processor compared to Samsung S24
 ❌ Smaller battery, shorter endurance under heavy use
 ❌ Limited storage options
 
 
-#### Video Review
+## Video Review
 <iframe width="100%" height="400" src="https://www.youtube.com/embed/XCD-aoY7yms" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
 
