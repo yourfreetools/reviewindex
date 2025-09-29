@@ -761,14 +761,14 @@ function renderComparisonsPage(searchResults, latestComparisons, allComparisons,
                     }).slice(0, 8); // Limit to 8 suggestions
                     
                     if (suggestions.length > 0) {
-                        searchSuggestions.innerHTML = suggestions.map(comp => `
-                            <div class="suggestion-item" onclick="selectSuggestion('${escapeJs(comp.title)}')">
-                                <strong>${escapeJs(comp.title)}</strong>
+                        searchSuggestions.innerHTML = suggestions.map(comp => \`
+                            <div class="suggestion-item" onclick="selectSuggestion('\${escapeJs(comp.title)}')">
+                                <strong>\${escapeJs(comp.title)}</strong>
                                 <div style="font-size: 0.9rem; color: #666; margin-top: 0.25rem;">
-                                    ${comp.products.join(' vs ')}
+                                    \${comp.products.join(' vs ')}
                                 </div>
                             </div>
-                        `).join('');
+                        \`).join('');
                         searchSuggestions.style.display = 'block';
                     } else {
                         searchSuggestions.style.display = 'none';
@@ -909,4 +909,4 @@ function renderErrorPage(title, message) {
             'Cache-Control': 'no-cache, no-store, must-revalidate'
         }
     });
-    }
+                                }
