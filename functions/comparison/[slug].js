@@ -17,8 +17,11 @@ export async function onRequest(context) {
             return renderErrorPage('Comparison not found', 'The requested comparison could not be found.');
         }
 
+        // Get related comparisons
+        const relatedComparisons = await fetchRelatedComparisons(slug, env.GITHUB_TOKEN);
+
         // Convert markdown to HTML and render the comparison page
-        const htmlContent = await renderComparisonPage(comparisonContent, slug, request.url);
+        const htmlContent = await renderComparisonPage(comparisonContent, slug, request.url, relatedComparisons);
         
         // Create response with 6-month cache headers
         return new Response(htmlContent, {
@@ -26,8 +29,7 @@ export async function onRequest(context) {
                 'Content-Type': 'text/html; charset=utf-8',
                 'Cache-Control': 'public, max-age=15552000, immutable', // 6 months
                 'X-Content-Type-Options': 'nosniff',
-                'X-Frame-Options': 'DENY',
-                'X-Robots-Tag': 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1'
+                'X-Frame-Options': 'DENY'
             }
         });
 
@@ -64,25 +66,75 @@ async function fetchComparisonContent(slug, githubToken) {
     }
 }
 
-async function renderComparisonPage(markdownContent, slug, requestUrl) {
+async function fetchRelatedComparisons(currentSlug, githubToken) {
+    const REPO_OWNER = 'yourfreetools';
+    const REPO_NAME = 'reviewindex';
+    
+    try {
+        // Get list of all comparison files
+        const response = await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/content/comparisons`,
+            {
+                headers: {
+                    'Authorization': `token ${githubToken}`,
+                    'User-Agent': 'Review-Index-App'
+                }
+            }
+        );
+
+        if (response.status === 200) {
+            const files = await response.json();
+            const comparisons = [];
+            
+            // Get up to 3 random comparisons (excluding current)
+            const otherFiles = files
+                .filter(file => file.name.endsWith('.md') && file.name !== `${currentSlug}.md`)
+                .sort(() => 0.5 - Math.random())
+                .slice(0, 3);
+
+            // Fetch frontmatter for each related comparison
+            for (const file of otherFiles) {
+                try {
+                    const fileResponse = await fetch(file.download_url);
+                    if (fileResponse.status === 200) {
+                        const content = await fileResponse.text();
+                        const { frontmatter } = parseComparisonMarkdown(content);
+                        comparisons.push({
+                            slug: file.name.replace('.md', ''),
+                            title: frontmatter.title,
+                            description: frontmatter.description,
+                            products: frontmatter.comparison_products || []
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Error processing related comparison ${file.name}:`, error);
+                }
+            }
+            
+            return comparisons;
+        }
+        return [];
+    } catch (error) {
+        console.error('Error fetching related comparisons:', error);
+        return [];
+    }
+}
+
+async function renderComparisonPage(markdownContent, slug, requestUrl, relatedComparisons) {
     // Parse frontmatter and content
     const { frontmatter, content } = parseComparisonMarkdown(markdownContent);
     
-    // Convert markdown to HTML with comparison-specific formatting
+    // Convert markdown to HTML with proper formatting
     const htmlContent = convertComparisonMarkdownToHTML(content);
     
     // Generate canonical URL
     const canonicalUrl = `https://reviewindex.pages.dev/comparison/${slug}`;
     
-    // Generate schema markup for comparison
-    const schemaMarkup = generateComparisonSchema(frontmatter, slug, canonicalUrl);
-    
     // Get products from frontmatter
     const products = frontmatter.comparison_products || [];
-    const primaryProduct = products[0] || '';
     
-    // Generate social image with fallback
-    const socialImage = frontmatter.featured_image || 'https://reviewindex.pages.dev/default-comparison-image.jpg';
+    // Generate schema markup
+    const schemaMarkup = generateComparisonSchema(frontmatter, slug, canonicalUrl, products);
     
     return `
 <!DOCTYPE html>
@@ -102,7 +154,7 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
     <meta property="og:description" content="${escapeHtml(frontmatter.description || `Compare ${products.join(' vs ')} - Detailed analysis and buying guide`)}">
     <meta property="og:type" content="article">
     <meta property="og:url" content="${canonicalUrl}">
-    <meta property="og:image" content="${escapeHtml(socialImage)}">
+    <meta property="og:image" content="${escapeHtml(frontmatter.featured_image || 'https://reviewindex.pages.dev/default-comparison-image.jpg')}">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:site_name" content="ReviewIndex">
@@ -111,8 +163,7 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${escapeHtml(frontmatter.title || formatComparisonSlug(slug))}">
     <meta name="twitter:description" content="${escapeHtml(frontmatter.description || `Compare ${products.join(' vs ')} - Detailed analysis and buying guide`)}">
-    <meta name="twitter:image" content="${escapeHtml(socialImage)}">
-    <meta name="twitter:image:alt" content="${escapeHtml(frontmatter.title || formatComparisonSlug(slug))} comparison">
+    <meta name="twitter:image" content="${escapeHtml(frontmatter.featured_image || 'https://reviewindex.pages.dev/default-comparison-image.jpg')}">
     
     <!-- Schema.org JSON-LD -->
     <script type="application/ld+json">
@@ -142,14 +193,14 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
             line-height: 1.6; 
             color: #334155;
-            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            background: #f8fafc;
             min-height: 100vh;
         }
         
         .container { 
-            max-width: 1400px; 
+            max-width: 1200px; 
             margin: 0 auto; 
-            padding: 20px;
+            padding: 0 20px;
         }
         
         /* Header Styles */
@@ -159,12 +210,12 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
             text-align: center;
             border-radius: 20px;
             box-shadow: var(--shadow);
-            margin-bottom: 2rem;
+            margin: 2rem 0;
             border: 1px solid var(--border);
         }
         
         .header h1 {
-            font-size: clamp(2rem, 4vw, 3.5rem);
+            font-size: clamp(1.8rem, 4vw, 2.5rem);
             margin-bottom: 1rem;
             color: var(--dark);
             line-height: 1.2;
@@ -172,7 +223,7 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
         }
         
         .header .description {
-            font-size: 1.25rem;
+            font-size: 1.2rem;
             color: #64748b;
             max-width: 800px;
             margin: 0 auto;
@@ -181,9 +232,9 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
         /* Quick Summary Cards */
         .summary-cards {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 1.5rem;
-            margin-bottom: 3rem;
+            margin: 2rem 0;
         }
         
         .summary-card {
@@ -193,12 +244,11 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
             box-shadow: var(--shadow);
             text-align: center;
             border: 1px solid var(--border);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            transition: transform 0.2s ease;
         }
         
         .summary-card:hover {
             transform: translateY(-4px);
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
         }
         
         .summary-card.winner {
@@ -206,7 +256,7 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
         }
         
         .summary-card h3 {
-            font-size: 1.25rem;
+            font-size: 1.1rem;
             margin-bottom: 1rem;
             color: var(--dark);
             display: flex;
@@ -215,38 +265,112 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
             gap: 0.5rem;
         }
         
-        /* Comparison Table */
-        .comparison-section {
+        /* Main Content Sections */
+        .content-section {
             background: white;
-            border-radius: 20px;
-            padding: 3rem 2rem;
-            margin-bottom: 3rem;
+            border-radius: 16px;
+            padding: 2.5rem;
+            margin: 2rem 0;
             box-shadow: var(--shadow);
             border: 1px solid var(--border);
         }
         
         .section-title {
-            font-size: 2rem;
-            margin-bottom: 2rem;
+            font-size: 1.8rem;
+            margin-bottom: 1.5rem;
             color: var(--dark);
-            text-align: center;
             display: flex;
             align-items: center;
-            justify-content: center;
             gap: 0.75rem;
         }
         
+        /* Related Comparisons Section */
+        .related-section {
+            background: white;
+            border-radius: 16px;
+            padding: 2.5rem;
+            margin: 3rem 0;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+        }
+        
+        .related-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        
+        .related-card {
+            background: var(--light);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            border: 1px solid var(--border);
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        
+        .related-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+            background: white;
+        }
+        
+        .related-card h4 {
+            color: var(--dark);
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+            line-height: 1.4;
+        }
+        
+        .related-card p {
+            color: #64748b;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+        
+        .related-products {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-top: 0.5rem;
+        }
+        
+        .related-badge {
+            background: var(--primary-light);
+            color: var(--primary-dark);
+            padding: 0.2rem 0.6rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .related-vs {
+            color: var(--gray-500);
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
+        
+        /* Comparison Table */
         .comparison-table {
             width: 100%;
             border-collapse: collapse;
-            margin: 2rem 0;
-            font-size: 1rem;
+            margin: 1.5rem 0;
+            font-size: 0.95rem;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
         }
         
         .comparison-table th {
             background: var(--light);
-            padding: 1.25rem 1rem;
-            text-align: center;
+            padding: 1rem;
+            text-align: left;
             font-weight: 600;
             color: var(--dark);
             border: 1px solid var(--border);
@@ -254,33 +378,82 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
         
         .comparison-table td {
             padding: 1rem;
-            text-align: center;
             border: 1px solid var(--border);
             vertical-align: top;
-        }
-        
-        .comparison-table tr:nth-child(even) {
-            background: #fafafa;
         }
         
         .comparison-table .feature-cell {
             background: var(--light);
             font-weight: 600;
-            text-align: left;
             color: var(--dark);
+            width: 200px;
         }
         
-        .winner-badge {
-            background: var(--success);
-            color: white;
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.875rem;
-            font-weight: 600;
-            display: inline-block;
-            margin-top: 0.5rem;
+        /* Product Cards */
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin: 2rem 0;
         }
         
+        .product-card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+        }
+        
+        .product-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--border);
+        }
+        
+        .product-header h3 {
+            font-size: 1.4rem;
+            color: var(--dark);
+            margin-bottom: 0.5rem;
+        }
+        
+        /* Images and Media */
+        .content-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 12px;
+            margin: 1rem 0;
+            display: block;
+        }
+        
+        /* YouTube Embed */
+        .video-embed {
+            margin: 2rem 0;
+            text-align: center;
+        }
+        
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            height: 0;
+            padding-bottom: 56.25%;
+            margin: 1.5rem 0;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
+        .video-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        /* Buttons */
         .btn {
             display: inline-block;
             background: var(--primary);
@@ -292,6 +465,7 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
             transition: all 0.3s ease;
             border: none;
             cursor: pointer;
+            font-size: 0.9rem;
         }
         
         .btn:hover {
@@ -307,48 +481,7 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
             background: #0d9c6d;
         }
         
-        /* Product Sections */
-        .products-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 2rem;
-            margin: 3rem 0;
-        }
-        
-        .product-card {
-            background: white;
-            border-radius: 16px;
-            padding: 2rem;
-            box-shadow: var(--shadow);
-            border: 1px solid var(--border);
-            transition: transform 0.2s ease;
-        }
-        
-        .product-card:hover {
-            transform: translateY(-4px);
-        }
-        
-        .product-header {
-            text-align: center;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
-            border-bottom: 2px solid var(--border);
-        }
-        
-        .product-header h3 {
-            font-size: 1.5rem;
-            color: var(--dark);
-            margin-bottom: 0.5rem;
-        }
-        
-        .product-image {
-            width: 100%;
-            max-width: 200px;
-            height: auto;
-            margin: 1rem auto;
-            border-radius: 12px;
-        }
-        
+        /* Pros/Cons Lists */
         .pros-cons {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -356,8 +489,14 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
             margin: 1.5rem 0;
         }
         
+        @media (max-width: 768px) {
+            .pros-cons {
+                grid-template-columns: 1fr;
+            }
+        }
+        
         .pros-list, .cons-list {
-            padding: 1rem;
+            padding: 1.5rem;
             border-radius: 8px;
         }
         
@@ -372,66 +511,91 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
         }
         
         .pros-list h4, .cons-list h4 {
-            margin-bottom: 0.75rem;
+            margin-bottom: 1rem;
             display: flex;
             align-items: center;
             gap: 0.5rem;
         }
         
-        /* YouTube Embed */
-        .youtube-embed {
-            margin: 3rem 0;
-            text-align: center;
+        /* Markdown Content Styling */
+        .markdown-content h2 {
+            font-size: 1.6rem;
+            margin: 2.5rem 0 1rem 0;
+            color: var(--dark);
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border);
         }
         
-        .video-wrapper {
-            position: relative;
-            width: 100%;
-            height: 0;
-            padding-bottom: 56.25%;
+        .markdown-content h3 {
+            font-size: 1.3rem;
+            margin: 2rem 0 1rem 0;
+            color: var(--dark);
+        }
+        
+        .markdown-content h4 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.75rem 0;
+            color: var(--dark);
+        }
+        
+        .markdown-content p {
+            margin-bottom: 1rem;
+            line-height: 1.7;
+            color: #4b5563;
+        }
+        
+        .markdown-content ul, .markdown-content ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+        }
+        
+        .markdown-content li {
+            margin-bottom: 0.5rem;
+            line-height: 1.6;
+        }
+        
+        .markdown-content strong {
+            font-weight: 600;
+            color: var(--dark);
+        }
+        
+        .markdown-content em {
+            font-style: italic;
+            color: #6b7280;
+        }
+        
+        .markdown-content blockquote {
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
             margin: 1.5rem 0;
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            background: var(--light);
+            border-radius: 0 8px 8px 0;
+            font-style: italic;
         }
         
-        .video-wrapper iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border: none;
+        .markdown-content code {
+            background: #f3f4f6;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #dc2626;
         }
         
-        /* Verdict Section */
-        .verdict-section {
-            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-            color: white;
-            padding: 4rem 2rem;
-            border-radius: 20px;
-            margin: 3rem 0;
-            text-align: center;
+        .markdown-content pre {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 1.5rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            font-size: 0.9rem;
         }
         
-        .verdict-section h2 {
-            font-size: 2.5rem;
-            margin-bottom: 2rem;
-            color: white;
-        }
-        
-        .recommendations {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 2rem;
-            margin: 2rem 0;
-        }
-        
-        .recommendation {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 2rem;
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
+        .markdown-content pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
         }
         
         /* Footer */
@@ -439,7 +603,8 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
             text-align: center;
             padding: 3rem 2rem;
             color: #64748b;
-            font-size: 0.9rem;
+            margin-top: 3rem;
+            border-top: 1px solid var(--border);
         }
         
         .back-link {
@@ -449,8 +614,8 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
             color: var(--primary);
             text-decoration: none;
             font-weight: 600;
-            margin-top: 2rem;
-            padding: 1rem 2rem;
+            margin: 2rem 0;
+            padding: 0.75rem 1.5rem;
             border: 2px solid var(--primary);
             border-radius: 8px;
             transition: all 0.3s ease;
@@ -464,36 +629,36 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
         /* Responsive Design */
         @media (max-width: 768px) {
             .container {
-                padding: 10px;
+                padding: 0 15px;
             }
             
             .header {
                 padding: 2rem 1rem;
             }
             
-            .comparison-section {
-                padding: 2rem 1rem;
+            .content-section {
+                padding: 1.5rem;
             }
             
-            .comparison-table {
-                font-size: 0.875rem;
-            }
-            
-            .comparison-table th,
-            .comparison-table td {
-                padding: 0.75rem 0.5rem;
+            .summary-cards {
+                grid-template-columns: 1fr;
             }
             
             .products-grid {
                 grid-template-columns: 1fr;
             }
             
-            .pros-cons {
+            .related-grid {
                 grid-template-columns: 1fr;
             }
             
-            .summary-cards {
-                grid-template-columns: 1fr;
+            .comparison-table {
+                font-size: 0.85rem;
+            }
+            
+            .comparison-table th,
+            .comparison-table td {
+                padding: 0.75rem 0.5rem;
             }
         }
         
@@ -501,40 +666,17 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
             .comparison-table {
                 display: block;
                 overflow-x: auto;
-                white-space: nowrap;
             }
-        }
-        
-        /* Print Styles */
-        @media print {
-            .btn, .back-link {
+            
+            .related-products {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.3rem;
+            }
+            
+            .related-vs {
                 display: none;
             }
-            
-            body {
-                background: white;
-            }
-            
-            .container {
-                max-width: none;
-                padding: 0;
-            }
-        }
-        
-        /* Accessibility */
-        @media (prefers-reduced-motion: reduce) {
-            * {
-                animation-duration: 0.01ms !important;
-                animation-iteration-count: 1 !important;
-                transition-duration: 0.01ms !important;
-            }
-        }
-        
-        /* Focus styles */
-        button:focus-visible,
-        a:focus-visible {
-            outline: 2px solid var(--primary);
-            outline-offset: 2px;
         }
     </style>
 </head>
@@ -545,54 +687,63 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
             ${frontmatter.description ? `<p class="description">${escapeHtml(frontmatter.description)}</p>` : ''}
         </header>
         
-        <!-- Quick Summary Cards -->
-        <div class="summary-cards">
-            <div class="summary-card winner">
-                <h3>🏆 Overall Winner</h3>
-                <p style="font-size: 1.5rem; font-weight: 600; color: var(--success);">${products[0] || 'Check comparison'}</p>
-                <p style="color: #64748b; margin-top: 0.5rem;">Best all-around choice for most users</p>
-            </div>
-            
-            <div class="summary-card">
-                <h3>💰 Best Value</h3>
-                <p style="font-size: 1.5rem; font-weight: 600; color: var(--warning);">${products[1] || products[0] || 'Check comparison'}</p>
-                <p style="color: #64748b; margin-top: 0.5rem;">Great performance at competitive price</p>
-            </div>
-            
-            <div class="summary-card">
-                <h3>⚡ Performance</h3>
-                <p style="font-size: 1.5rem; font-weight: 600; color: var(--primary);">${products[0] || 'Check comparison'}</p>
-                <p style="color: #64748b; margin-top: 0.5rem;">Top-tier performance for power users</p>
-            </div>
-        </div>
-        
         <main role="main">
-            <!-- Comparison Table -->
-            <section class="comparison-section" aria-labelledby="specs-title">
-                <h2 class="section-title" id="specs-title">⚡ Quick Comparison</h2>
-                <div class="comparison-table-container">
+            <!-- Quick Summary Cards -->
+            <div class="summary-cards">
+                <div class="summary-card winner">
+                    <h3>🏆 Overall Winner</h3>
+                    <p style="font-size: 1.3rem; font-weight: 600; color: var(--success); margin: 0.5rem 0;">Check Comparison</p>
+                    <p style="color: #64748b;">Best all-around choice for most users</p>
+                </div>
+                
+                <div class="summary-card">
+                    <h3>💰 Best Value</h3>
+                    <p style="font-size: 1.3rem; font-weight: 600; color: var(--warning); margin: 0.5rem 0;">Check Comparison</p>
+                    <p style="color: #64748b;">Great performance at competitive price</p>
+                </div>
+                
+                <div class="summary-card">
+                    <h3>⚡ Performance</h3>
+                    <p style="font-size: 1.3rem; font-weight: 600; color: var(--primary); margin: 0.5rem 0;">Check Comparison</p>
+                    <p style="color: #64748b;">Top-tier performance for power users</p>
+                </div>
+            </div>
+            
+            <!-- Main Content -->
+            <div class="content-section">
+                <div class="markdown-content">
                     ${htmlContent}
                 </div>
-            </section>
+            </div>
             
-            <!-- Individual Product Analysis -->
-            <section class="comparison-section" aria-labelledby="products-title">
-                <h2 class="section-title" id="products-title">🔍 Detailed Analysis</h2>
-                <div class="products-grid">
-                    ${generateProductCards(products)}
+            <!-- Related Comparisons -->
+            ${relatedComparisons.length > 0 ? `
+            <section class="related-section" aria-labelledby="related-title">
+                <h2 class="section-title" id="related-title">🔗 Related Comparisons</h2>
+                <p style="color: #64748b; margin-bottom: 1.5rem;">You might also be interested in these comparisons</p>
+                <div class="related-grid">
+                    ${relatedComparisons.map(comp => `
+                        <a href="/comparison/${comp.slug}" class="related-card" aria-label="Read comparison: ${escapeHtml(comp.title)}">
+                            <h4>${escapeHtml(comp.title)}</h4>
+                            <p>${escapeHtml(comp.description || 'Detailed side-by-side comparison')}</p>
+                            ${comp.products.length > 0 ? `
+                            <div class="related-products">
+                                ${comp.products.map((product, index) => `
+                                    <span class="related-badge">${escapeHtml(product)}</span>
+                                    ${index < comp.products.length - 1 ? '<span class="related-vs">vs</span>' : ''}
+                                `).join('')}
+                            </div>
+                            ` : ''}
+                        </a>
+                    `).join('')}
                 </div>
             </section>
+            ` : ''}
             
-            <!-- Final Verdict -->
-            <section class="verdict-section" aria-labelledby="verdict-title">
-                <h2 id="verdict-title">🏆 Final Verdict</h2>
-                <div class="recommendations">
-                    ${generateRecommendations(products)}
-                </div>
-                <a href="/comparisons" class="back-link">
-                    ← View All Comparisons
-                </a>
-            </section>
+            <!-- Back Link -->
+            <div style="text-align: center;">
+                <a href="/comparisons" class="back-link">← View All Comparisons</a>
+            </div>
         </main>
         
         <footer class="footer" role="contentinfo">
@@ -602,22 +753,23 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
     </div>
     
     <script>
-        // Performance optimization
+        // Make images responsive
         document.addEventListener('DOMContentLoaded', function() {
-            // Lazy load images
-            const images = document.querySelectorAll('img[data-src]');
-            const imageObserver = new IntersectionObserver((entries, observer) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        const img = entry.target;
-                        img.src = img.dataset.src;
-                        img.removeAttribute('data-src');
-                        imageObserver.unobserve(img);
-                    }
-                });
+            // Handle images
+            const images = document.querySelectorAll('.markdown-content img');
+            images.forEach(img => {
+                img.style.maxWidth = '100%';
+                img.style.height = 'auto';
+                img.style.borderRadius = '8px';
+                img.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
             });
             
-            images.forEach(img => imageObserver.observe(img));
+            // Handle videos
+            const iframes = document.querySelectorAll('iframe');
+            iframes.forEach(iframe => {
+                iframe.style.width = '100%';
+                iframe.style.minHeight = '400px';
+            });
             
             // Smooth scrolling for anchor links
             document.querySelectorAll('a[href^="#"]').forEach(anchor => {
@@ -632,26 +784,16 @@ async function renderComparisonPage(markdownContent, slug, requestUrl) {
                     }
                 });
             });
-            
-            // Add loading states
-            document.querySelectorAll('a[target="_blank"]').forEach(link => {
-                link.addEventListener('click', function() {
-                    this.style.opacity = '0.7';
-                });
-            });
         });
-        
-        // Service Worker registration for caching
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/sw.js');
-            });
-        }
     </script>
 </body>
 </html>`;
 }
 
+// ... (keep all the existing helper functions: parseComparisonMarkdown, convertComparisonMarkdownToHTML, 
+// generateComparisonSchema, formatComparisonSlug, escapeHtml, renderErrorPage from the previous code)
+
+// Add the helper functions that are missing from the previous code
 function parseComparisonMarkdown(content) {
     const frontmatter = {};
     let markdownContent = content;
@@ -689,19 +831,29 @@ function parseComparisonMarkdown(content) {
 }
 
 function convertComparisonMarkdownToHTML(markdown) {
-    // Enhanced markdown to HTML conversion for comparison tables
     let html = markdown;
     
-    // Convert markdown tables to HTML tables
+    // Clean up any visible code snippets or markdown artifacts
+    html = html
+        // Remove visible code blocks and markdown artifacts
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/`[^`]*`/g, '')
+        .replace(/{:\s*[^}]*}/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="content-image" loading="lazy">');
+    
+    // Process tables
     html = html.replace(/\|([^\n]+)\|\n\|([^\n]+)\|\n((?:\|[^\n]+\|\n?)+)/g, function(match, headers, separators, rows) {
         const headerCells = headers.split('|').map(cell => cell.trim()).filter(cell => cell);
         const rowLines = rows.trim().split('\n');
         
-        let tableHTML = '<table class="comparison-table" role="table" aria-label="Product comparison table">\n<thead>\n<tr>';
+        let tableHTML = '<table class="comparison-table">\n<thead>\n<tr>';
         
         // Add headers
         headerCells.forEach(header => {
-            tableHTML += `<th scope="col">${header}</th>`;
+            tableHTML += `<th>${cleanCellContent(header)}</th>`;
         });
         tableHTML += '</tr>\n</thead>\n<tbody>';
         
@@ -711,14 +863,8 @@ function convertComparisonMarkdownToHTML(markdown) {
             if (cells.length > 0) {
                 tableHTML += '<tr>';
                 cells.forEach((cell, index) => {
-                    const isFeature = index === 0;
-                    const cellClass = isFeature ? 'feature-cell' : '';
-                    const cellContent = cell.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                           .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                                           .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" loading="lazy" style="max-width: 100px; height: auto;">')
-                                           .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-                    
-                    tableHTML += `<td class="${cellClass}">${cellContent}</td>`;
+                    const cellClass = index === 0 ? 'feature-cell' : '';
+                    tableHTML += `<td class="${cellClass}">${cleanCellContent(cell)}</td>`;
                 });
                 tableHTML += '</tr>';
             }
@@ -728,78 +874,54 @@ function convertComparisonMarkdownToHTML(markdown) {
         return tableHTML;
     });
     
-    // Convert other markdown elements
+    // Convert headings
     html = html
         .replace(/^# (.*)$/gm, '<h2>$1</h2>')
         .replace(/^## (.*)$/gm, '<h3>$1</h3>')
-        .replace(/^### (.*)$/gm, '<h4>$1</h4>')
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em>$1</em>')
-        .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" loading="lazy">')
-        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-        .replace(/^> (.*)$/gm, '<blockquote>$1</blockquote>');
+        .replace(/^### (.*)$/gm, '<h4>$1</h4>');
+    
+    // Convert lists
+    html = html.replace(/^- (.*)$/gm, '<li>$1</li>')
+               .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+    
+    // Convert paragraphs
+    const lines = html.split('\n');
+    let processedLines = [];
+    let inList = false;
+    
+    for (let line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            if (inList) inList = false;
+            continue;
+        }
+        
+        if (trimmed.startsWith('<') || trimmed.startsWith('|') || trimmed.startsWith('- ') || trimmed.startsWith('<li>')) {
+            processedLines.push(trimmed);
+            if (trimmed.startsWith('<li>')) inList = true;
+        } else if (!inList && !trimmed.startsWith('#') && !trimmed.startsWith('<')) {
+            processedLines.push(`<p>${trimmed}</p>`);
+        } else {
+            processedLines.push(trimmed);
+        }
+    }
+    
+    html = processedLines.join('\n');
     
     return html;
 }
 
-function generateProductCards(products) {
-    if (!products || products.length === 0) return '';
-    
-    return products.map(product => `
-        <div class="product-card">
-            <div class="product-header">
-                <h3>${escapeHtml(product)}</h3>
-                <div class="rating">${'⭐'.repeat(4)} 4.5/5</div>
-            </div>
-            
-            <div class="pros-cons">
-                <div class="pros-list">
-                    <h4>✅ Pros</h4>
-                    <ul>
-                        <li>Excellent performance</li>
-                        <li>Great value for money</li>
-                        <li>Reliable brand</li>
-                    </ul>
-                </div>
-                
-                <div class="cons-list">
-                    <h4>❌ Cons</h4>
-                    <ul>
-                        <li>Could be improved</li>
-                        <li>Some limitations</li>
-                    </ul>
-                </div>
-            </div>
-            
-            <div style="text-align: center; margin-top: 1.5rem;">
-                <a href="#" class="btn btn-success">Check Price</a>
-            </div>
-        </div>
-    `).join('');
+function cleanCellContent(content) {
+    return content
+        .replace(/{:\s*[^}]*}/g, '')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '<a href="$2" target="_blank">$1</a>')
+        .trim();
 }
 
-function generateRecommendations(products) {
-    if (!products || products.length === 0) return '';
-    
-    return products.map((product, index) => {
-        const reasons = [
-            'Best for overall performance and features',
-            'Great value with balanced performance',
-            'Excellent for specific use cases'
-        ];
-        
-        return `
-            <div class="recommendation">
-                <h3 style="color: white; margin-bottom: 1rem;">${escapeHtml(product)}</h3>
-                <p style="color: #cbd5e1;">${reasons[index] || reasons[0]}</p>
-            </div>
-        `;
-    }).join('');
-}
-
-function generateComparisonSchema(frontmatter, slug, url) {
-    const products = frontmatter.comparison_products || [];
-    
+function generateComparisonSchema(frontmatter, slug, canonicalUrl, products) {
     return JSON.stringify({
         "@context": "https://schema.org",
         "@type": "Article",
@@ -814,15 +936,11 @@ function generateComparisonSchema(frontmatter, slug, url) {
         },
         "publisher": {
             "@type": "Organization",
-            "name": "ReviewIndex",
-            "logo": {
-                "@type": "ImageObject",
-                "url": "https://reviewindex.pages.dev/logo.png"
-            }
+            "name": "ReviewIndex"
         },
         "mainEntityOfPage": {
             "@type": "WebPage",
-            "@id": url
+            "@id": canonicalUrl
         }
     }, null, 2);
 }
@@ -900,7 +1018,7 @@ function renderErrorPage(title, message) {
     <div class="error-container">
         <h1>⚠️ ${title}</h1>
         <p>${message}</p>
-        <a href="/">← Return to Homepage</a>
+        <a href="/comparisons">← Return to Comparisons</a>
     </div>
 </body>
 </html>`;
@@ -912,4 +1030,4 @@ function renderErrorPage(title, message) {
             'Cache-Control': 'no-cache, no-store, must-revalidate'
         }
     });
-}
+        }
