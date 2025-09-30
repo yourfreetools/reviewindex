@@ -42,6 +42,14 @@ export async function onRequestGet(context) {
         
         console.log('Sitemap request for:', pathname);
         
+        // Debug endpoints
+        if (pathname === '/debug-sitemap') {
+            return await debugSitemap(context);
+        }
+        if (pathname === '/debug-files') {
+            return await debugFiles(context);
+        }
+        
         // Handle main sitemap index
         if (pathname === '/sitemap-index.xml') {
             return await generateMainSitemapIndex(context);
@@ -64,6 +72,85 @@ export async function onRequestGet(context) {
     } catch (error) {
         console.error('Sitemap generation error:', error);
         return generateErrorSitemap();
+    }
+}
+
+// Debug endpoint to see all files
+async function debugFiles(context) {
+    const allContent = await fetchAllContentOptimized(context);
+    return new Response(JSON.stringify(allContent, null, 2), {
+        headers: { 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+        }
+    });
+}
+
+// Debug endpoint to see GitHub file structure
+async function debugSitemap(context) {
+    try {
+        const response = await fetch(
+            'https://api.github.com/repos/yourfreetools/reviewindex/git/trees/main?recursive=1',
+            {
+                headers: {
+                    'Authorization': `Bearer ${context.env.GITHUB_TOKEN}`,
+                    'User-Agent': 'ReviewIndex-Sitemap',
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            }
+        );
+
+        if (!response.ok) {
+            return new Response(JSON.stringify({ error: `GitHub API error: ${response.status}` }), {
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        const treeData = await response.json();
+        
+        // Filter and analyze the content
+        const allFiles = treeData.tree.map(item => item.path);
+        const contentFiles = allFiles.filter(path => path.startsWith('content/'));
+        const reviewFiles = contentFiles.filter(path => 
+            path.startsWith('content/reviews/') && path.endsWith('.md')
+        );
+        
+        // Try multiple possible comparison folder names
+        const comparisonFiles1 = contentFiles.filter(path => 
+            path.startsWith('content/comparisons/') && path.endsWith('.md')
+        );
+        const comparisonFiles2 = contentFiles.filter(path => 
+            path.startsWith('content/comparison/') && path.endsWith('.md')
+        );
+        const comparisonFiles3 = contentFiles.filter(path => 
+            path.includes('comparison') && path.endsWith('.md')
+        );
+        
+        const debugInfo = {
+            total_files: allFiles.length,
+            content_files: contentFiles.length,
+            review_files: reviewFiles.length,
+            comparison_files_comparisons: comparisonFiles1.length,
+            comparison_files_comparison: comparisonFiles2.length,
+            comparison_files_any: comparisonFiles3.length,
+            review_paths: reviewFiles,
+            comparison_paths_comparisons: comparisonFiles1,
+            comparison_paths_comparison: comparisonFiles2,
+            comparison_paths_any: comparisonFiles3,
+            all_content_paths: contentFiles
+        };
+        
+        return new Response(JSON.stringify(debugInfo, null, 2), {
+            headers: { 
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache'
+            }
+        });
+        
+    } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+            headers: { 'Content-Type': 'application/json' }
+        });
     }
 }
 
@@ -210,7 +297,7 @@ async function getAllContent(context) {
 // Fetch all content with single API call
 async function fetchAllContentOptimized(context) {
     try {
-        console.log('Fetching content from GitHub...');
+        console.log('🔄 Fetching content from GitHub...');
         
         const response = await fetch(
             'https://api.github.com/repos/yourfreetools/reviewindex/git/trees/main?recursive=1',
@@ -229,49 +316,65 @@ async function fetchAllContentOptimized(context) {
 
         const treeData = await response.json();
         
+        // DEBUG: Log all files in content directory
+        const allContentFiles = treeData.tree.filter(item => 
+            item.type === 'blob' && 
+            item.path.startsWith('content/')
+        );
+        
+        console.log('📁 All content files:', allContentFiles.map(f => f.path));
+        
         // Process reviews
-        const reviews = treeData.tree
-            .filter(item => 
-                item.type === 'blob' &&
-                item.path.startsWith('content/reviews/') && 
-                item.path.endsWith('.md')
-            )
-            .map(file => {
-                const filename = file.path.split('/').pop().replace('.md', '');
-                return {
-                    url: `/review/${generateValidSlug(filename)}`,
-                    lastmod: new Date().toISOString().split('T')[0],
-                    changefreq: 'monthly',
-                    priority: '0.8'
-                };
-            });
+        const reviewFiles = treeData.tree.filter(item => 
+            item.type === 'blob' &&
+            item.path.startsWith('content/reviews/') && 
+            item.path.endsWith('.md')
+        );
+        
+        console.log(`📝 Review files found: ${reviewFiles.length}`);
+        console.log('Review paths:', reviewFiles.map(f => f.path));
 
-        // Process comparisons
-        const comparisons = treeData.tree
-            .filter(item => 
-                item.type === 'blob' &&
-                item.path.startsWith('content/comparisons/') && 
-                item.path.endsWith('.md')
-            )
-            .map(file => {
-                const filename = file.path.split('/').pop().replace('.md', '');
-                return {
-                    url: `/comparison/${generateValidSlug(filename)}`,
-                    lastmod: new Date().toISOString().split('T')[0],
-                    changefreq: 'weekly',
-                    priority: '0.9'
-                };
-            });
+        // Process comparisons - try multiple possible folder names
+        const comparisonFiles = treeData.tree.filter(item => 
+            item.type === 'blob' && (
+                item.path.startsWith('content/comparisons/') || 
+                item.path.startsWith('content/comparison/')
+            ) && 
+            item.path.endsWith('.md')
+        );
+        
+        console.log(`🔄 Comparison files found: ${comparisonFiles.length}`);
+        console.log('Comparison paths:', comparisonFiles.map(f => f.path));
+
+        const reviews = reviewFiles.map(file => {
+            const filename = file.path.split('/').pop().replace('.md', '');
+            return {
+                url: `/review/${generateValidSlug(filename)}`,
+                lastmod: new Date().toISOString().split('T')[0],
+                changefreq: 'monthly',
+                priority: '0.8'
+            };
+        });
+
+        const comparisons = comparisonFiles.map(file => {
+            const filename = file.path.split('/').pop().replace('.md', '');
+            return {
+                url: `/comparison/${generateValidSlug(filename)}`,
+                lastmod: new Date().toISOString().split('T')[0],
+                changefreq: 'weekly',
+                priority: '0.9'
+            };
+        });
 
         // Combine all content
         const allContent = [...reviews, ...comparisons]
             .sort((a, b) => b.url.localeCompare(a.url));
 
-        console.log(`Found ${reviews.length} reviews and ${comparisons.length} comparisons for sitemap`);
+        console.log(`✅ Final sitemap content: ${reviews.length} reviews + ${comparisons.length} comparisons = ${allContent.length} total URLs`);
         return allContent;
 
     } catch (error) {
-        console.error('Error fetching content:', error);
+        console.error('❌ Error fetching content:', error);
         return [];
     }
 }
@@ -298,4 +401,4 @@ function generateErrorSitemap() {
             'Cache-Control': 'public, max-age=300'
         }
     });
-}
+                 }
