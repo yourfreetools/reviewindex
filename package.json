@@ -1,7 +1,8 @@
 {
   "name": "reviewindex",
   "version": "1.0.0",
+  "description": "ReviewIndex - Force redeploy 2025-09-30",
   "scripts": {
-    "build": "echo 'Building ReviewIndex site'"
+    "build": "echo 'Force redeploy - $(date)' && echo 'Building ReviewIndex site'"
   }
 }
