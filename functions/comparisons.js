@@ -7,14 +7,14 @@ export async function onRequest(context) {
         const url = new URL(request.url);
         const searchQuery = url.searchParams.get('search') || '';
         
-        // Fetch comparison data with caching and limits
+        // Fetch comparison data
         const comparisonData = await fetchComparisonData(env.GITHUB_TOKEN);
         
         if (!comparisonData || comparisonData.length === 0) {
             return renderErrorPage('No comparisons found', 'There are no product comparisons available at the moment.');
         }
 
-        // Get latest 12 comparisons with full data for featured section
+        // Get latest 12 comparisons for featured section
         const latestComparisons = comparisonData.slice(0, 12);
 
         // Filter comparisons based on search
@@ -30,7 +30,7 @@ export async function onRequest(context) {
         const htmlContent = renderComparisonsPage(
             searchResults,
             latestComparisons,
-            comparisonData, // Pass all data for client-side search
+            comparisonData,
             {
                 searchQuery,
                 showingResults,
@@ -43,14 +43,13 @@ export async function onRequest(context) {
         return new Response(htmlContent, {
             headers: { 
                 'Content-Type': 'text/html; charset=utf-8',
-                'Cache-Control': 'public, max-age=10800', // 3 hours cache
+                'Cache-Control': 'public, max-age=10800',
                 'X-Content-Type-Options': 'nosniff',
                 'X-Frame-Options': 'DENY'
             }
         });
 
     } catch (error) {
-        console.error('Error rendering comparisons page:', error);
         return renderErrorPage('Server Error', 'An error occurred while loading the comparisons.');
     }
 }
@@ -67,13 +66,10 @@ async function fetchComparisonData(githubToken) {
         let cachedResponse = await cache.match(cacheUrl);
         
         if (cachedResponse) {
-            console.log('✅ COMPARISONS Cache HIT');
             return await cachedResponse.json();
         }
         
-        console.log('🔄 COMPARISONS Cache MISS - fetching fresh data');
-        
-        // SINGLE API CALL - Get repository tree with recursive option
+        // Fetch fresh data from GitHub
         const response = await fetch(
             `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git/trees/main?recursive=1`,
             {
@@ -95,17 +91,14 @@ async function fetchComparisonData(githubToken) {
                     item.path.startsWith('content/comparisons/') && 
                     item.path.endsWith('.md')
                 )
-                .sort((a, b) => b.path.localeCompare(a.path)) // Sort by path (newest first)
-                .slice(0, 50); // Limit to 50 most recent files for performance
-
-            console.log(`📊 Processing ${comparisonFiles.length} comparison files`);
+                .sort((a, b) => b.path.localeCompare(a.path))
+                .slice(0, 50);
 
             const comparisons = [];
             
-            // Process only the limited number of files
+            // Process comparison files
             for (const file of comparisonFiles) {
                 try {
-                    // Construct download URL
                     const downloadUrl = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${file.path}`;
                     
                     const fileResponse = await fetch(downloadUrl, {
@@ -134,8 +127,7 @@ async function fetchComparisonData(githubToken) {
                         });
                     }
                 } catch (error) {
-                    console.error(`Error processing comparison ${file.path}:`, error);
-                    // Create basic entry even if content fetch fails
+                    // Create basic entry if content fetch fails
                     const slug = file.path.split('/').pop().replace('.md', '');
                     comparisons.push({
                         slug: slug,
@@ -144,16 +136,14 @@ async function fetchComparisonData(githubToken) {
                         categories: ['comparisons'],
                         products: extractProductsFromSlug(slug),
                         featured_image: getDefaultImage(extractProductsFromSlug(slug)),
-                        date: file.last_modified || new Date().toISOString(),
-                        last_modified: file.last_modified || new Date().toISOString()
+                        date: new Date().toISOString(),
+                        last_modified: new Date().toISOString()
                     });
                 }
             }
             
             // Sort by date for consistent ordering
             comparisons.sort((a, b) => new Date(b.date) - new Date(a.date));
-            
-            console.log(`✅ Processed ${comparisons.length} comparisons`);
             
             // Store in cache for 3 hours
             const cacheResponse = new Response(JSON.stringify(comparisons), {
@@ -169,13 +159,11 @@ async function fetchComparisonData(githubToken) {
         }
         return [];
     } catch (error) {
-        console.error('Error fetching comparison data:', error);
         return [];
     }
 }
 
 function extractProductsFromSlug(slug) {
-    // Extract product names from slug (e.g., "iphone-15-vs-samsung-s24" -> ["iPhone 15", "Samsung S24"])
     const parts = slug.split('-vs-');
     return parts.map(part => 
         part.split('-')
@@ -203,11 +191,10 @@ function filterComparisonsBySearch(comparisons, searchQuery) {
         if (comp.categories.some(category => category.toLowerCase().includes(query))) return true;
         
         return false;
-    }).slice(0, 20); // Limit results for performance
+    }).slice(0, 20);
 }
 
 function getDefaultImage(products) {
-    // Generate a placeholder image based on product names
     if (products && products.length > 0) {
         const productNames = products.join('+vs+');
         return `https://via.placeholder.com/400x200/3B82F6/FFFFFF?text=${encodeURIComponent(productNames)}`;
@@ -867,7 +854,7 @@ function renderComparisonsPage(searchResults, latestComparisons, allComparisons,
                         return comp.title.toLowerCase().includes(query) ||
                                comp.products.some(product => product.toLowerCase().includes(query)) ||
                                comp.description.toLowerCase().includes(query);
-                    }).slice(0, 8); // Limit to 8 suggestions
+                    }).slice(0, 8);
                     
                     if (suggestions.length > 0) {
                         searchSuggestions.innerHTML = suggestions.map(comp => \`
@@ -1019,4 +1006,4 @@ function renderErrorPage(title, message) {
             'Cache-Control': 'no-cache, no-store, must-revalidate'
         }
     });
-}
+                                                      }
