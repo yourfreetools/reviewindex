@@ -7,12 +7,12 @@ export async function onRequestGet(context) {
 
 User-agent: *
 Allow: /
-Disallow: /adminpage.html
+Disallow: /IndexNow.html
+Disallow: /AddC.html
+Disallow: /AddR.html
 
-# Sitemaps
+# Sitemap
 Sitemap: ${baseUrl}/sitemap.xml
-Sitemap: ${baseUrl}/sitemap.xml?type=posts
-Sitemap: ${baseUrl}/sitemap.xml?type=categories
 
 # Crawl delay (optional)
 # Crawl-delay: 10
