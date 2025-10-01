@@ -13,7 +13,7 @@ draft: false
 
 # Best Amazon Astro 2 Home Robot 2024 – Honest Review
 
-![Best Amazon Astro 2 Home Robot 2024 – Honest Review](https://cdn.vox-cdn.com/thumbor/uPxM8As9-xhOdkPxrHfDr5UgnUc=/0x0:2040x1360/1520x0/filters:focal(0x0:2040x1360):no_upscale()/cdn.vox-cdn.com/uploads/chorus_asset/file/23583115/jtuohy_220519_5239_0013.jpg)
+![Best Amazon Astro 2 Home Robot 2024 – Honest Review](https://m.media-amazon.com/images/I/41JCI-X0b5L._UF1000,1000_QL80_.jpg)
 
 Comprehensive review of Amazon Astro 2 covering design, features, smart assistant performance, and whether it’s worth the price for your home in 2024.
 
