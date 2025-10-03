@@ -4,7 +4,7 @@ description: "Detailed review of the Mercedes-Benz GLC EQ 2024: design, features
 image: "https://images.hgmsites.net/med/2024-mercedes-benz-glc-class-glc-300-4matic-coupe-angular-front-exterior-view_100967049_m.webp"
 rating: 4
 affiliateLink: ""
-youtubeId: "Vgy"
+youtubeId: "https://youtu.be/DpENPbr8evg"
 categories: ["reviews", "cars", "electric-vehicles", "luxury"]
 date: "2025-10-03T11:43:11.664Z"
 slug: "mercedes-benz-glc-eq-2024-honest-review"
